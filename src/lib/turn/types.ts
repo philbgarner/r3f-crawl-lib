@@ -1,0 +1,76 @@
+// src/lib/turn/types.ts
+//
+// Shared types for the priority-queue turn system.
+//
+// Note: RpsEffect has been moved to entities/effects.ts (Phase 4).
+// A re-export stub is provided here until Phase 4 is complete.
+
+export type ActorId = string;
+
+export type ActorKind = "player" | "monster";
+
+/**
+ * @deprecated Will be re-exported from entities/effects.ts after Phase 4.
+ * Kept here as a stub for phases 2–3.
+ */
+export type RpsEffect = "none" | "bleeding" | "freezing" | "poisoned";
+
+export type ActorBase = {
+  id: ActorId;
+  kind: ActorKind;
+  x: number;
+  y: number;
+  /** >0; higher speed = acts more often. */
+  speed: number;
+  alive: boolean;
+  blocksMovement: boolean;
+};
+
+export type PlayerActor = ActorBase & {
+  kind: "player";
+  hp: number;
+  maxHp: number;
+  attack: number;
+  defense: number;
+};
+
+/**
+ * Alert state machine:
+ *   idle      – unaware of player
+ *   chasing   – actively pursuing
+ *   searching – lost sight; counting down before giving up
+ */
+export type MonsterAlertState = "idle" | "chasing" | "searching";
+
+export type MonsterActor = ActorBase & {
+  kind: "monster";
+  /** Display name. */
+  name: string;
+  /** Single ASCII glyph for rendering. */
+  glyph: string;
+  /** 0–10 scale - influences detection radius and persistence. */
+  danger: number;
+  hp: number;
+  maxHp: number;
+  attack: number;
+  defense: number;
+  xp: number;
+  alertState: MonsterAlertState;
+  rpsEffect: RpsEffect;
+  searchTurnsLeft: number;
+  lastKnownPlayerPos: { x: number; y: number } | null;
+};
+
+export type TurnActionKind = "wait" | "move" | "attack" | "interact";
+
+export type TurnAction = {
+  kind: TurnActionKind;
+  dx?: number;
+  dy?: number;
+  targetId?: ActorId;
+  meta?: Record<string, unknown>;
+};
+
+export type ActionCost = {
+  time: number;
+};
