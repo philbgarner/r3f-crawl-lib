@@ -64,7 +64,7 @@ No entity logic yet; no game rules.
 
 ---
 
-## Phase 3 — Dungeon generation
+## Phase 3 — Dungeon generation ✅ COMPLETE
 
 **Goal:** Produce `DungeonOutputs` from either BSP procedural generation or a Tiled JSON map.
 No entity spawning or rendering yet — just the grid data.
