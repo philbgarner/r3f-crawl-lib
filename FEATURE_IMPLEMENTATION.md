@@ -33,7 +33,7 @@ None.
 
 ---
 
-## Phase 2 — Turn system types and scheduler
+## Phase 2 — Turn system types and scheduler ✅ COMPLETE
 
 **Goal:** The pure turn machinery — types, cost math, the priority queue, and the event payload types.
 No entity logic yet; no game rules.
