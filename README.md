@@ -6,6 +6,50 @@ Game logic lives entirely in your JS layer — the library provides the renderin
 
 ---
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+  - [`<script>` tag (no build step)](#script-tag-no-build-step)
+- [Quick Start](#quick-start)
+- [Script Tag Developer Guide](#script-tag-developer-guide)
+  - [The `game` handle](#the-game-handle)
+  - [Moving the player](#moving-the-player)
+  - [Listening to game events](#listening-to-game-events)
+  - [Adding entities at runtime](#adding-entities-at-runtime)
+  - [Loading a Tiled map](#loading-a-tiled-map)
+  - [HUD overlay with plain HTML](#hud-overlay-with-plain-html)
+  - [Spawn callback](#spawn-callback)
+  - [Decoration callback](#decoration-callback)
+  - [Surface painting callback](#surface-painting-callback)
+  - [Keybindings helper](#keybindings-helper)
+  - [Script tag API surface](#script-tag-api-surface)
+- [Core Concepts](#core-concepts)
+  - [Dungeon](#dungeon)
+    - [Tiled Map Import](#tiled-map-import)
+  - [Player](#player)
+  - [Turn Scheduler](#turn-scheduler)
+  - [Entities](#entities)
+    - [NPCs](#npcs)
+    - [Enemies](#enemies)
+    - [Spawn Callback](#spawn-callback-1)
+  - [Decorations](#decorations)
+  - [Surface Painting](#surface-painting)
+  - [Combat](#combat)
+  - [Items & Inventory](#items--inventory)
+  - [Hidden Passages](#hidden-passages)
+  - [Rendering](#rendering)
+  - [Keybindings](#keybindings)
+  - [Audio](#audio)
+  - [Events](#events)
+- [Tiled Workflow](#tiled-workflow)
+- [Configuration Reference](#configuration-reference)
+- [Atlas Format](#atlas-format)
+- [Character Atlas Format](#character-atlas-format)
+  - [Sprite assignment](#sprite-assignment)
+
+---
+
 ## Features
 
 - First-person 3D tile-based dungeon rendering with torch lighting and fog
