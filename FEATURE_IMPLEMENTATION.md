@@ -10,7 +10,7 @@ Cross-references:
 
 ---
 
-## Phase 1 — Foundation utilities
+## Phase 1 — Foundation utilities ✅ COMPLETE
 
 **Goal:** Pure, dependency-free helpers that every other module imports.
 No libold React code; no Three.js. No game constants.
