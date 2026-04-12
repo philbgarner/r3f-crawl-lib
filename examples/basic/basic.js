@@ -65,10 +65,39 @@ const game = createGame(document.body, {
 });
 
 // ---------------------------------------------------------------------------
-// 3D renderer
+// 3D renderer — with tile atlas
 // ---------------------------------------------------------------------------
+//
+// atlas.png: 512×1024 px, 64 px tiles → 8 columns.
+// Tile ID = (pixelY / 64) * 8 + (pixelX / 64)  (row-major, top-left origin).
+//
+// atlas.json entries used (uv = [pixelX, pixelY]):
+//   Floor   – Flagstone   uv [256, 128] → id 20
+//   Ceiling – Cobblestone uv [192, 128] → id 19
+//   Wall    – Brick       uv [0,   128] → id 16
 
-const renderer = createDungeonRenderer(viewportEl, game);
+let renderer;
+
+// Load the atlas as a plain Image so the renderer's bundled Three.js creates
+// the WebGLTexture — avoids cross-instance mismatch with window.THREE.
+const atlasImg = new Image();
+atlasImg.onload = () => {
+  renderer = createDungeonRenderer(viewportEl, game, {
+    atlas: {
+      image:       atlasImg,
+      tileWidth:   64,
+      tileHeight:  64,
+      sheetWidth:  512,
+      sheetHeight: 1024,
+      columns:     8,
+    },
+    floorTileId: 20,  // Flagstone   uv [256, 128]
+    ceilTileId:  19,  // Cobblestone uv [192, 128]
+    wallTileId:  16,  // Brick       uv [0,   128]
+  });
+  game.generate();
+};
+atlasImg.src = '/examples/basic/atlas.png';
 
 // ---------------------------------------------------------------------------
 // Spawn enemies — one per room, capped, skipping early rooms
@@ -105,7 +134,7 @@ attachSpawner(game, {
 game.events.on("turn", ({ turn }) => {
   turnEl.textContent = String(turn);
   updateStats();
-  renderer.setEntities(enemies);
+  if (renderer) renderer.setEntities(enemies);
 });
 
 game.events.on("audio", ({ name }) => {
@@ -160,11 +189,7 @@ attachKeybindings(game, {
   },
 });
 
-// ---------------------------------------------------------------------------
-// Generate the dungeon
-// ---------------------------------------------------------------------------
-
-game.generate();
+// game.generate() is called inside the TextureLoader callback above.
 
 // ---------------------------------------------------------------------------
 // Helpers

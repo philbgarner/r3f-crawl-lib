@@ -2578,17 +2578,184 @@ var CrawlLib = (function(exports, three) {
 	* Designed for script-tag usage: create it after `game.generate()` is wired
 	* up, and it will visualise the dungeon and player/entity positions.
 	*
-	* Usage:
+	* Usage (plain colours):
 	*   const renderer = createDungeonRenderer(document.getElementById('viewport'), game);
+	*
+	* Usage (tile atlas):
+	*   const renderer = createDungeonRenderer(el, game, {
+	*     atlas: {
+	*       texture,
+	*       tileWidth: 16, tileHeight: 16,
+	*       sheetWidth: 256, sheetHeight: 256,
+	*       columns: 16,
+	*     },
+	*     floorTileId: 0,
+	*     ceilTileId: 1,
+	*     wallTileId: 2,
+	*   });
+	*
 	*   // Pass live entity list on every turn:
 	*   game.events.on('turn', () => renderer.setEntities(enemies));
 	*/
+	var TORCH_UNIFORMS_GLSL = `
+uniform float uFogNear;
+uniform float uFogFar;
+uniform float uBandNear;
+uniform float uTime;
+uniform vec3  uTint0;
+uniform vec3  uTint1;
+uniform vec3  uTint2;
+uniform vec3  uTint3;
+uniform vec3  uTorchColor;
+uniform float uTorchIntensity;
+`;
+	var TORCH_HASH_GLSL = `
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+`;
+	var TORCH_FNS_GLSL = `
+float torchBand(float flickerRadius) {
+  float raw = sin(uTime * 7.0)  * 0.45
+            + sin(uTime * 13.7) * 0.35
+            + sin(uTime * 3.1)  * 0.20;
+  float flicker = (floor(raw * 1.5 + 0.5)) / 6.0;
+  float dist = clamp((vFogDist - uBandNear) / (uFogFar - uBandNear), 0.0, 1.0);
+  float flickeredDist = clamp(dist + flicker * flickerRadius, 0.0, 1.0);
+  return floor(pow(flickeredDist, 0.75) * 5.0);
+}
+
+vec3 applyTorchLighting(vec3 baseColor, float band) {
+  float timeSlot = floor(uTime * 1.5);
+  vec2 cell = floor(vWorldPos * 0.5);
+  float spatialNoise = hash(cell + vec2(timeSlot * 7.3, timeSlot * 3.1));
+  float turb = (floor(spatialNoise * 3.0) / 3.0) * 0.18;
+
+  float brightness;
+  vec3  tint;
+  if (band < 1.0) {
+    brightness = 1.00 - turb; tint = uTint0;
+  } else if (band < 2.0) {
+    brightness = 0.55;        tint = uTint1;
+  } else if (band < 3.0) {
+    brightness = 0.22;        tint = uTint2;
+  } else if (band < 4.0) {
+    brightness = 0.10;        tint = uTint3;
+  } else {
+    brightness = 0.00;        tint = vec3(1.0);
+  }
+
+  vec3 lit = baseColor * tint * brightness;
+  float torchAdd = (band < 1.0) ? 0.250 :
+                   (band < 2.0) ? 0.200 : 0.0;
+  lit += uTorchColor * (torchAdd * uTorchIntensity);
+  return lit;
+}
+`;
+	var FLICKER_RADIUS = .03;
+	var BUMP_DEPTH = .3;
+	var ATLAS_VERT = `
+attribute float aTileId;
+uniform vec2  uTileSize;
+uniform float uColumns;
+
+varying vec2  vAtlasUv;
+varying vec2  vTileOrigin;
+varying float vFogDist;
+varying vec2  vWorldPos;
+varying vec3  vWorldPos3D;
+varying vec3  vFaceNormal;
+varying vec2  vTileUv;
+
+void main() {
+  float id  = floor(aTileId + 0.5);
+  float col = mod(id, uColumns);
+  float row = floor(id / uColumns);
+
+  vec2 offset = vec2(col * uTileSize.x, 1.0 - (row + 1.0) * uTileSize.y);
+  vAtlasUv    = offset + uv * uTileSize;
+  vTileOrigin = offset;
+  vTileUv     = uv;
+
+  vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  vWorldPos    = worldPos.xz;
+  vWorldPos3D  = worldPos.xyz;
+  vFaceNormal  = normalize(mat3(modelMatrix * instanceMatrix) * vec3(0.0, 0.0, 1.0));
+
+  vec4 eyePos = viewMatrix * worldPos;
+  vFogDist = length(eyePos.xyz);
+
+  gl_Position = projectionMatrix * eyePos;
+}
+`;
+	var ATLAS_FRAG = `
+uniform sampler2D uAtlas;
+uniform vec2  uTileSize;
+uniform float uColumns;
+uniform vec3  uFogColor;
+uniform float uFlickerRadius;
+uniform vec2  uTexelSize;
+${TORCH_UNIFORMS_GLSL}
+
+varying vec2  vAtlasUv;
+varying vec2  vTileOrigin;
+varying float vFogDist;
+varying vec2  vWorldPos;
+varying vec3  vWorldPos3D;
+varying vec3  vFaceNormal;
+varying vec2  vTileUv;
+
+${TORCH_HASH_GLSL}
+${TORCH_FNS_GLSL}
+
+void main() {
+  // Clamp to tile texel bounds to prevent atlas bleed from perspective interpolation.
+  vec2 uvMin = vTileOrigin + uTexelSize * 0.5;
+  vec2 uvMax = vTileOrigin + uTileSize  - uTexelSize * 0.5;
+  vec2 atlasUv = clamp(vAtlasUv, uvMin, uvMax);
+
+  vec4 color = texture2D(uAtlas, atlasUv);
+  if (color.a < 0.01) discard;
+
+  // Bump from intensity gradient: derive tangent normal from neighbouring texels.
+  vec3 luma = vec3(0.299, 0.587, 0.114);
+  float l0 = dot(color.rgb, luma);
+  float lR = dot(texture2D(uAtlas, clamp(atlasUv + vec2(uTexelSize.x, 0.0), uvMin, uvMax)).rgb, luma);
+  float lU = dot(texture2D(uAtlas, clamp(atlasUv + vec2(0.0, uTexelSize.y), uvMin, uvMax)).rgb, luma);
+  vec3 bumpN = normalize(vec3(l0 - lR, l0 - lU, ${BUMP_DEPTH}));
+  float bumpShade = clamp(dot(bumpN, normalize(vec3(0.5, 0.5, 1.0))), 0.0, 1.0);
+  bumpShade = 0.8 + 0.35 * bumpShade;
+
+  float band = torchBand(uFlickerRadius);
+  vec3 lit = applyTorchLighting(color.rgb * bumpShade, band);
+
+  gl_FragColor = vec4(mix(lit, uFogColor, step(4.0, band)), color.a);
+}
+`;
 	var HALF_PI = Math.PI / 2;
 	/** Eye height as a fraction of ceiling height (same as PerspectiveDungeonView). */
 	var EYE_HEIGHT_FACTOR = .4;
-	/** Build a Matrix4 that positions, rotates, and scales a unit PlaneGeometry quad. */
+	var DEFAULT_BAND_NEAR = 8;
 	function makeFaceMatrix(x, y, z, rx, ry, rz, w, h) {
 		return new three.Matrix4().compose(new three.Vector3(x, y, z), new three.Quaternion().setFromEuler(new three.Euler(rx, ry, rz)), new three.Vector3(w, h, 1));
+	}
+	/**
+	* Build a PlaneGeometry with a pre-allocated aTileId InstancedBufferAttribute,
+	* and an InstancedMesh using either a ShaderMaterial (atlas) or a plain material.
+	*/
+	function buildInstancedMesh(matrices, tileIds, material, useAtlas) {
+		const geo = new three.PlaneGeometry(1, 1);
+		if (useAtlas) {
+			const tileIdArr = new Float32Array(matrices.length);
+			tileIds.forEach((id, i) => {
+				tileIdArr[i] = id;
+			});
+			geo.setAttribute("aTileId", new three.InstancedBufferAttribute(tileIdArr, 1));
+		}
+		const mesh = new three.InstancedMesh(geo, material, matrices.length);
+		matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+		mesh.instanceMatrix.needsUpdate = true;
+		return mesh;
 	}
 	function createDungeonRenderer(element, game, options = {}) {
 		const tileSize = options.tileSize ?? 3;
@@ -2599,6 +2766,13 @@ var CrawlLib = (function(exports, three) {
 		const fogHex = options.fogColor ?? "#000000";
 		const lerpFactor = options.lerpFactor ?? .18;
 		const fogColor = new three.Color(fogHex);
+		const atlas = options.atlas;
+		const floorTileId = options.floorTileId ?? 0;
+		const ceilTileId = options.ceilTileId ?? 0;
+		const wallTileId = options.wallTileId ?? 0;
+		const bandNear = options.bandNear ?? DEFAULT_BAND_NEAR;
+		const torchColor = options.torchColor ?? new three.Color(1, .85, .4);
+		const torchIntensity = options.torchIntensity ?? .33;
 		const glRenderer = new three.WebGLRenderer({ antialias: false });
 		glRenderer.setPixelRatio(window.devicePixelRatio);
 		glRenderer.setClearColor(fogColor);
@@ -2611,10 +2785,41 @@ var CrawlLib = (function(exports, three) {
 		scene.add(new three.AmbientLight(16777215, .06));
 		const torchLight = new three.PointLight(16771264, 3, tileSize * 5, 2);
 		scene.add(torchLight);
-		const quadGeo = new three.PlaneGeometry(1, 1);
-		const floorMat = new three.MeshStandardMaterial({ color: 5592422 });
-		const ceilMat = new three.MeshStandardMaterial({ color: 2236979 });
-		const wallMat = new three.MeshStandardMaterial({ color: 7037040 });
+		const atlasMaterials = [];
+		function makeAtlasMaterial(atlasConfig) {
+			const tex = new three.Texture(atlasConfig.image);
+			tex.magFilter = three.NearestFilter;
+			tex.minFilter = three.NearestFilter;
+			tex.needsUpdate = true;
+			const mat = new three.ShaderMaterial({
+				vertexShader: ATLAS_VERT,
+				fragmentShader: ATLAS_FRAG,
+				uniforms: {
+					uAtlas: { value: tex },
+					uTileSize: { value: new three.Vector2(atlasConfig.tileWidth / atlasConfig.sheetWidth, atlasConfig.tileHeight / atlasConfig.sheetHeight) },
+					uColumns: { value: atlasConfig.columns },
+					uTexelSize: { value: new three.Vector2(1 / atlasConfig.sheetWidth, 1 / atlasConfig.sheetHeight) },
+					uFogColor: { value: fogColor },
+					uFogNear: { value: fogNear },
+					uFogFar: { value: fogFar },
+					uFlickerRadius: { value: FLICKER_RADIUS },
+					uTime: { value: 0 },
+					uBandNear: { value: bandNear },
+					uTint0: { value: new three.Color(1, 1, 1) },
+					uTint1: { value: new three.Color(.67, .67, .67) },
+					uTint2: { value: new three.Color(.33, .33, .33) },
+					uTint3: { value: new three.Color(.25, .25, .25) },
+					uTorchColor: { value: torchColor },
+					uTorchIntensity: { value: torchIntensity }
+				},
+				side: three.FrontSide
+			});
+			atlasMaterials.push(mat);
+			return mat;
+		}
+		const floorMat = atlas ? makeAtlasMaterial(atlas) : new three.MeshStandardMaterial({ color: 5592422 });
+		const ceilMat = atlas ? makeAtlasMaterial(atlas) : new three.MeshStandardMaterial({ color: 2236979 });
+		const wallMat = atlas ? makeAtlasMaterial(atlas) : new three.MeshStandardMaterial({ color: 7037040 });
 		let floorMesh = null;
 		let ceilMesh = null;
 		let wallMesh = null;
@@ -2630,6 +2835,9 @@ var CrawlLib = (function(exports, three) {
 			const floors = [];
 			const ceils = [];
 			const walls = [];
+			const floorIds = [];
+			const ceilIds = [];
+			const wallIds = [];
 			function isSolid(cx, cz) {
 				if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
 				return (solid[cz * width + cx] ?? 0) > 0;
@@ -2639,23 +2847,31 @@ var CrawlLib = (function(exports, three) {
 				const wx = (cx + .5) * tileSize;
 				const wz = (cz + .5) * tileSize;
 				floors.push(makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize));
+				floorIds.push(floorTileId);
 				ceils.push(makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize));
-				if (isSolid(cx, cz - 1)) walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
-				if (isSolid(cx, cz + 1)) walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH));
-				if (isSolid(cx - 1, cz)) walls.push(makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH));
-				if (isSolid(cx + 1, cz)) walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
+				ceilIds.push(ceilTileId);
+				if (isSolid(cx, cz - 1)) {
+					walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
+					wallIds.push(wallTileId);
+				}
+				if (isSolid(cx, cz + 1)) {
+					walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH));
+					wallIds.push(wallTileId);
+				}
+				if (isSolid(cx - 1, cz)) {
+					walls.push(makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH));
+					wallIds.push(wallTileId);
+				}
+				if (isSolid(cx + 1, cz)) {
+					walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
+					wallIds.push(wallTileId);
+				}
 			}
-			floorMesh = new three.InstancedMesh(quadGeo, floorMat, floors.length);
-			floors.forEach((m, i) => floorMesh.setMatrixAt(i, m));
-			floorMesh.instanceMatrix.needsUpdate = true;
+			floorMesh = buildInstancedMesh(floors, floorIds, floorMat, !!atlas);
 			scene.add(floorMesh);
-			ceilMesh = new three.InstancedMesh(quadGeo, ceilMat, ceils.length);
-			ceils.forEach((m, i) => ceilMesh.setMatrixAt(i, m));
-			ceilMesh.instanceMatrix.needsUpdate = true;
+			ceilMesh = buildInstancedMesh(ceils, ceilIds, ceilMat, !!atlas);
 			scene.add(ceilMesh);
-			wallMesh = new three.InstancedMesh(quadGeo, wallMat, walls.length);
-			walls.forEach((m, i) => wallMesh.setMatrixAt(i, m));
-			wallMesh.instanceMatrix.needsUpdate = true;
+			wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas);
 			scene.add(wallMesh);
 		}
 		const entityGeo = new three.BoxGeometry(tileSize * .35, ceilingH * .55, tileSize * .35);
@@ -2699,6 +2915,8 @@ var CrawlLib = (function(exports, three) {
 			rafId = requestAnimationFrame(tick);
 			const dt = Math.min((t - lastT) / 1e3, .1);
 			lastT = t;
+			const tSec = t / 1e3;
+			for (const mat of atlasMaterials) if (mat.uniforms.uTime) mat.uniforms.uTime.value = tSec;
 			if (initialized) {
 				const k = 1 - Math.pow(1 - lerpFactor, dt * 60);
 				curX += (tgtX - curX) * k;
