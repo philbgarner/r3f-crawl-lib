@@ -2608,6 +2608,9 @@ var BASIC_ATLAS_VERT = `
 attribute float aTileId;
 attribute float aHeightOffset;
 attribute float aUvRotation;
+// 1.0 = full tile; < 1.0 = show only that fraction of the tile, top-aligned.
+// Used for partial-height skirt panels so bricks keep their aspect ratio.
+attribute float aUvHeightScale;
 uniform vec2  uTileSize;
 uniform float uColumns;
 
@@ -2620,9 +2623,13 @@ void main() {
   float col = mod(id, uColumns);
   float row = floor(id / uColumns);
 
+  // Scale face height dimension BEFORE rotation so it always affects the
+  // physical height axis of the face, regardless of UV rotation.
+  float hs = clamp(aUvHeightScale, 0.0, 1.0);
+  vec2 localUv = vec2(uv.x, uv.y * hs);
+
   // Rotate UV within tile bounds (0=0°, 1=90°CCW, 2=180°, 3=270°CCW).
   int iRot = int(floor(aUvRotation + 0.5));
-  vec2 localUv = uv;
   if (iRot == 1)      localUv = vec2(localUv.y, 1.0 - localUv.x);
   else if (iRot == 2) localUv = vec2(1.0 - localUv.x, 1.0 - localUv.y);
   else if (iRot == 3) localUv = vec2(1.0 - localUv.y, localUv.x);
@@ -2720,7 +2727,7 @@ function makeFaceMatrix(x, y, z, rx, ry, rz, w, h) {
 * Build a PlaneGeometry with a pre-allocated aTileId InstancedBufferAttribute,
 * and an InstancedMesh using either a ShaderMaterial (atlas) or a plain material.
 */
-function buildInstancedMesh(matrices, tileIds, material, useAtlas, heightOffsets, uvRotations) {
+function buildInstancedMesh(matrices, tileIds, material, useAtlas, heightOffsets, uvRotations, uvHeightScales) {
 	const geo = new THREE.PlaneGeometry(1, 1);
 	if (useAtlas) {
 		const tileIdArr = new Float32Array(matrices.length);
@@ -2735,6 +2742,11 @@ function buildInstancedMesh(matrices, tileIds, material, useAtlas, heightOffsets
 			rotArr[i] = r;
 		});
 		geo.setAttribute("aUvRotation", new THREE.InstancedBufferAttribute(rotArr, 1));
+		const hsArr = new Float32Array(matrices.length).fill(1);
+		if (uvHeightScales) uvHeightScales.forEach((s, i) => {
+			hsArr[i] = s;
+		});
+		geo.setAttribute("aUvHeightScale", new THREE.InstancedBufferAttribute(hsArr, 1));
 	}
 	const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
 	matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
@@ -2840,6 +2852,7 @@ function createDungeonRenderer(element, game, options = {}) {
 		const wallRots = [];
 		const floorEdgeRots = [];
 		const ceilEdgeRots = [];
+		const ceilEdgeHeightScales = [];
 		function isSolid(cx, cz) {
 			if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
 			return (solid[cz * width + cx] ?? 0) > 0;
@@ -2934,6 +2947,7 @@ function createDungeonRenderer(element, game, options = {}) {
 				ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
 				ceilEdgeIds.push(s.tileId);
 				ceilEdgeRots.push(s.rotation ?? 0);
+				ceilEdgeHeightScales.push(h / tileSize);
 			}
 			const ncN = openCeilVal(cx, cz - 1);
 			if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx, cz * tileSize, Math.PI, "north");
@@ -2952,7 +2966,7 @@ function createDungeonRenderer(element, game, options = {}) {
 		scene.add(wallMesh);
 		floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas, void 0, floorEdgeRots);
 		scene.add(floorEdgeMesh);
-		ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, void 0, ceilEdgeRots);
+		ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, void 0, ceilEdgeRots, ceilEdgeHeightScales);
 		scene.add(ceilEdgeMesh);
 	}
 	const entityGeo = new THREE.BoxGeometry(tileSize * .35, ceilingH * .55, tileSize * .35);

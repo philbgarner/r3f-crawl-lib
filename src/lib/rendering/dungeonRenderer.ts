@@ -145,6 +145,7 @@ function buildInstancedMesh(
   useAtlas: boolean,
   heightOffsets?: Float32Array,
   uvRotations?: number[],
+  uvHeightScales?: number[],
 ): THREE.InstancedMesh {
   const geo = new THREE.PlaneGeometry(1, 1);
 
@@ -159,6 +160,10 @@ function buildInstancedMesh(
     const rotArr = new Float32Array(matrices.length);
     if (uvRotations) uvRotations.forEach((r, i) => { rotArr[i] = r; });
     geo.setAttribute('aUvRotation', new THREE.InstancedBufferAttribute(rotArr, 1));
+
+    const hsArr = new Float32Array(matrices.length).fill(1.0);
+    if (uvHeightScales) uvHeightScales.forEach((s, i) => { hsArr[i] = s; });
+    geo.setAttribute('aUvHeightScale', new THREE.InstancedBufferAttribute(hsArr, 1));
   }
 
   const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
@@ -306,9 +311,10 @@ export function createDungeonRenderer(
     const ceilEdgeIds:   number[]        = [];
     const floorOffsets:  number[]        = [];
     const ceilOffsets:   number[]        = [];
-    const wallRots:      number[]        = [];
-    const floorEdgeRots: number[]        = [];
-    const ceilEdgeRots:  number[]        = [];
+    const wallRots:           number[]        = [];
+    const floorEdgeRots:      number[]        = [];
+    const ceilEdgeRots:       number[]        = [];
+    const ceilEdgeHeightScales: number[]      = [];
 
     function isSolid(cx: number, cz: number) {
       if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
@@ -378,6 +384,7 @@ export function createDungeonRenderer(
           ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
           ceilEdgeIds.push(s.tileId);
           ceilEdgeRots.push(s.rotation ?? 0);
+          ceilEdgeHeightScales.push(h / tileSize);  // clip UV so bricks stay square
         }
         const ncN = openCeilVal(cx, cz - 1); if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx,               cz * tileSize,         Math.PI,  'north');
         const ncS = openCeilVal(cx, cz + 1); if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx,               (cz + 1) * tileSize,   0,         'south');
@@ -398,7 +405,7 @@ export function createDungeonRenderer(
     floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas, undefined, floorEdgeRots);
     scene.add(floorEdgeMesh);
 
-    ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, undefined, ceilEdgeRots);
+    ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, undefined, ceilEdgeRots, ceilEdgeHeightScales);
     scene.add(ceilEdgeMesh);
   }
 

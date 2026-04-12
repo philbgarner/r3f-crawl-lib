@@ -115,7 +115,7 @@ atlasImg.onload = () => {
     ceilTileId: 19, // Cobblestone uv [192, 128]
     wallTileId: 16, // Brick       uv [0,   128]
     ceilSkirtTiles: {
-      north: { tileId: 20, rotation: 2 },
+      north: { tileId: 19, rotation: 0 },
       south: { tileId: 19, rotation: 0 },
       east: { tileId: 19, rotation: 1 },
       west: { tileId: 19, rotation: 3 },
