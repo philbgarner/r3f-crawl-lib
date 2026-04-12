@@ -12,21 +12,17 @@
 //
 // One offset step = tileSize * 0.5 = 1.5 world units (default tileSize 3).
 
-const {
-  createGame,
-  attachKeybindings,
-  createDungeonRenderer,
-} = CrawlLib;
+const { createGame, attachKeybindings, createDungeonRenderer } = CrawlLib;
 
 // ---------------------------------------------------------------------------
 // DOM refs
 // ---------------------------------------------------------------------------
 
 const viewportEl = document.getElementById("viewport");
-const logEl      = document.getElementById("log");
-const hpEl       = document.getElementById("hp");
-const turnEl     = document.getElementById("turn");
-const posEl      = document.getElementById("pos");
+const logEl = document.getElementById("log");
+const hpEl = document.getElementById("hp");
+const turnEl = document.getElementById("turn");
+const posEl = document.getElementById("pos");
 
 // ---------------------------------------------------------------------------
 // Create game
@@ -67,10 +63,10 @@ game.events.on("turn", () => {
   heightsProcessed = true;
 
   const { width, height, textures } = outputs;
-  const solid     = textures.solid.image.data;
-  const dist      = textures.distanceToWall.image.data;
-  const floorOff  = textures.floorHeightOffset.image.data;
-  const ceilOff   = textures.ceilingHeightOffset.image.data;
+  const solid = textures.solid.image.data;
+  const dist = textures.distanceToWall.image.data;
+  const floorOff = textures.floorHeightOffset.image.data;
+  const ceilOff = textures.ceilingHeightOffset.image.data;
 
   for (let i = 0; i < width * height; i++) {
     if (solid[i] !== 0) continue; // skip wall cells
@@ -94,7 +90,7 @@ game.events.on("turn", () => {
   }
 
   // Mark textures as dirty so any future GPU upload picks up the changes.
-  textures.floorHeightOffset.needsUpdate  = true;
+  textures.floorHeightOffset.needsUpdate = true;
   textures.ceilingHeightOffset.needsUpdate = true;
 });
 
@@ -109,15 +105,21 @@ atlasImg.onload = () => {
   renderer = createDungeonRenderer(viewportEl, game, {
     atlas: {
       image: atlasImg,
-      tileWidth:   64,
-      tileHeight:  64,
-      sheetWidth:  512,
+      tileWidth: 64,
+      tileHeight: 64,
+      sheetWidth: 512,
       sheetHeight: 1024,
       columns: 8,
     },
     floorTileId: 20, // Flagstone   uv [256, 128]
-    ceilTileId:  19, // Cobblestone uv [192, 128]
-    wallTileId:  16, // Brick       uv [0,   128]
+    ceilTileId: 19, // Cobblestone uv [192, 128]
+    wallTileId: 16, // Brick       uv [0,   128]
+    ceilSkirtTiles: {
+      north: { tileId: 19, rotation: 0 },
+      south: { tileId: 19, rotation: 0 },
+      east: { tileId: 19, rotation: 1 },
+      west: { tileId: 19, rotation: 3 },
+    },
   });
   game.generate();
 };
@@ -138,13 +140,13 @@ game.events.on("turn", ({ turn }) => {
 
 attachKeybindings(game, {
   bindings: {
-    moveForward:  ["w", "W", "ArrowUp"],
+    moveForward: ["w", "W", "ArrowUp"],
     moveBackward: ["s", "S", "ArrowDown"],
-    moveLeft:     ["a", "A", "ArrowLeft"],
-    moveRight:    ["d", "D", "ArrowRight"],
-    turnLeft:     ["q", "Q"],
-    turnRight:    ["e", "E"],
-    wait:         [" "],
+    moveLeft: ["a", "A", "ArrowLeft"],
+    moveRight: ["d", "D", "ArrowRight"],
+    turnLeft: ["q", "Q"],
+    turnRight: ["e", "E"],
+    wait: [" "],
   },
   onAction(action, event) {
     event.preventDefault();
@@ -165,13 +167,27 @@ attachKeybindings(game, {
     }
     let a;
     switch (action) {
-      case "moveForward":  a = relativeMove(1,  0); break;
-      case "moveBackward": a = relativeMove(-1, 0); break;
-      case "moveLeft":     a = relativeMove(0, -1); break;
-      case "moveRight":    a = relativeMove(0,  1); break;
-      case "turnLeft":     a = game.player.rotate( Math.PI / 2); break;
-      case "turnRight":    a = game.player.rotate(-Math.PI / 2); break;
-      case "wait":         a = game.player.wait(); break;
+      case "moveForward":
+        a = relativeMove(1, 0);
+        break;
+      case "moveBackward":
+        a = relativeMove(-1, 0);
+        break;
+      case "moveLeft":
+        a = relativeMove(0, -1);
+        break;
+      case "moveRight":
+        a = relativeMove(0, 1);
+        break;
+      case "turnLeft":
+        a = game.player.rotate(Math.PI / 2);
+        break;
+      case "turnRight":
+        a = game.player.rotate(-Math.PI / 2);
+        break;
+      case "wait":
+        a = game.player.wait();
+        break;
     }
     if (a) game.turns.commit(a);
   },
@@ -190,6 +206,6 @@ function addLog(text, cls) {
 }
 
 function updateStats() {
-  hpEl.textContent  = `${game.player.hp} / ${game.player.maxHp}`;
+  hpEl.textContent = `${game.player.hp} / ${game.player.maxHp}`;
   posEl.textContent = `${game.player.x}, ${game.player.z}`;
 }

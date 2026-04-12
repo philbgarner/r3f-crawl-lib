@@ -14,6 +14,10 @@ import * as THREE from "three";
 export const BASIC_ATLAS_VERT = /* glsl */ `
 attribute float aTileId;
 attribute float aHeightOffset;
+attribute float aUvRotation;
+// 1.0 = full tile; < 1.0 = show only that fraction of the tile, top-aligned.
+// Used for partial-height skirt panels so bricks keep their aspect ratio.
+attribute float aUvHeightScale;
 uniform vec2  uTileSize;
 uniform float uColumns;
 
@@ -26,8 +30,19 @@ void main() {
   float col = mod(id, uColumns);
   float row = floor(id / uColumns);
 
+  // Scale face height dimension BEFORE rotation so it always affects the
+  // physical height axis of the face, regardless of UV rotation.
+  float hs = clamp(aUvHeightScale, 0.0, 1.0);
+  vec2 localUv = vec2(uv.x, uv.y * hs);
+
+  // Rotate UV within tile bounds (0=0°, 1=90°CCW, 2=180°, 3=270°CCW).
+  int iRot = int(floor(aUvRotation + 0.5));
+  if (iRot == 1)      localUv = vec2(localUv.y, 1.0 - localUv.x);
+  else if (iRot == 2) localUv = vec2(1.0 - localUv.x, 1.0 - localUv.y);
+  else if (iRot == 3) localUv = vec2(1.0 - localUv.y, localUv.x);
+
   vec2 offset = vec2(col * uTileSize.x, 1.0 - (row + 1.0) * uTileSize.y);
-  vAtlasUv    = offset + uv * uTileSize;
+  vAtlasUv    = offset + localUv * uTileSize;
   vTileOrigin = offset;
 
   vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);

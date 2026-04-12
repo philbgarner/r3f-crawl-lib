@@ -2633,6 +2633,10 @@
 	var BASIC_ATLAS_VERT = `
 attribute float aTileId;
 attribute float aHeightOffset;
+attribute float aUvRotation;
+// 1.0 = full tile; < 1.0 = show only that fraction of the tile, top-aligned.
+// Used for partial-height skirt panels so bricks keep their aspect ratio.
+attribute float aUvHeightScale;
 uniform vec2  uTileSize;
 uniform float uColumns;
 
@@ -2645,8 +2649,19 @@ void main() {
   float col = mod(id, uColumns);
   float row = floor(id / uColumns);
 
+  // Scale face height dimension BEFORE rotation so it always affects the
+  // physical height axis of the face, regardless of UV rotation.
+  float hs = clamp(aUvHeightScale, 0.0, 1.0);
+  vec2 localUv = vec2(uv.x, uv.y * hs);
+
+  // Rotate UV within tile bounds (0=0°, 1=90°CCW, 2=180°, 3=270°CCW).
+  int iRot = int(floor(aUvRotation + 0.5));
+  if (iRot == 1)      localUv = vec2(localUv.y, 1.0 - localUv.x);
+  else if (iRot == 2) localUv = vec2(1.0 - localUv.x, 1.0 - localUv.y);
+  else if (iRot == 3) localUv = vec2(1.0 - localUv.y, localUv.x);
+
   vec2 offset = vec2(col * uTileSize.x, 1.0 - (row + 1.0) * uTileSize.y);
-  vAtlasUv    = offset + uv * uTileSize;
+  vAtlasUv    = offset + localUv * uTileSize;
   vTileOrigin = offset;
 
   vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
@@ -2738,7 +2753,7 @@ void main() {
 	* Build a PlaneGeometry with a pre-allocated aTileId InstancedBufferAttribute,
 	* and an InstancedMesh using either a ShaderMaterial (atlas) or a plain material.
 	*/
-	function buildInstancedMesh(matrices, tileIds, material, useAtlas, heightOffsets) {
+	function buildInstancedMesh(matrices, tileIds, material, useAtlas, heightOffsets, uvRotations, uvHeightScales) {
 		const geo = new three.PlaneGeometry(1, 1);
 		if (useAtlas) {
 			const tileIdArr = new Float32Array(matrices.length);
@@ -2748,6 +2763,16 @@ void main() {
 			geo.setAttribute("aTileId", new three.InstancedBufferAttribute(tileIdArr, 1));
 			const offsets = heightOffsets ?? new Float32Array(matrices.length);
 			geo.setAttribute("aHeightOffset", new three.InstancedBufferAttribute(offsets, 1));
+			const rotArr = new Float32Array(matrices.length);
+			if (uvRotations) uvRotations.forEach((r, i) => {
+				rotArr[i] = r;
+			});
+			geo.setAttribute("aUvRotation", new three.InstancedBufferAttribute(rotArr, 1));
+			const hsArr = new Float32Array(matrices.length).fill(1);
+			if (uvHeightScales) uvHeightScales.forEach((s, i) => {
+				hsArr[i] = s;
+			});
+			geo.setAttribute("aUvHeightScale", new three.InstancedBufferAttribute(hsArr, 1));
 		}
 		const mesh = new three.InstancedMesh(geo, material, matrices.length);
 		matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
@@ -2767,6 +2792,9 @@ void main() {
 		const floorTileId = options.floorTileId ?? 0;
 		const ceilTileId = options.ceilTileId ?? 0;
 		const wallTileId = options.wallTileId ?? 0;
+		const wallTiles = options.wallTiles;
+		const floorSkirtTiles = options.floorSkirtTiles;
+		const ceilSkirtTiles = options.ceilSkirtTiles;
 		const glRenderer = new three.WebGLRenderer({ antialias: false });
 		glRenderer.setPixelRatio(window.devicePixelRatio);
 		glRenderer.setClearColor(fogColor);
@@ -2829,6 +2857,12 @@ void main() {
 			const offsetStep = tileSize * .5;
 			const floorOffData = outputs.textures.floorHeightOffset?.image.data;
 			const ceilOffData = outputs.textures.ceilingHeightOffset?.image.data;
+			function spec(map, dir, fallbackId) {
+				return map?.[dir] ?? {
+					tileId: fallbackId,
+					rotation: 0
+				};
+			}
 			const floors = [];
 			const ceils = [];
 			const walls = [];
@@ -2841,6 +2875,10 @@ void main() {
 			const ceilEdgeIds = [];
 			const floorOffsets = [];
 			const ceilOffsets = [];
+			const wallRots = [];
+			const floorEdgeRots = [];
+			const ceilEdgeRots = [];
+			const ceilEdgeHeightScales = [];
 			function isSolid(cx, cz) {
 				if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
 				return (solid[cz * width + cx] ?? 0) > 0;
@@ -2873,69 +2911,88 @@ void main() {
 				ceilIds.push(ceilTileId);
 				ceilOffsets.push(-(ceilVal - 128) * offsetStep);
 				if (isSolid(cx, cz - 1)) {
+					const s = spec(wallTiles, "north", wallTileId);
 					walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
-					wallIds.push(wallTileId);
+					wallIds.push(s.tileId);
+					wallRots.push(s.rotation ?? 0);
 				}
 				if (isSolid(cx, cz + 1)) {
+					const s = spec(wallTiles, "south", wallTileId);
 					walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH));
-					wallIds.push(wallTileId);
+					wallIds.push(s.tileId);
+					wallRots.push(s.rotation ?? 0);
 				}
 				if (isSolid(cx - 1, cz)) {
+					const s = spec(wallTiles, "west", wallTileId);
 					walls.push(makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH));
-					wallIds.push(wallTileId);
+					wallIds.push(s.tileId);
+					wallRots.push(s.rotation ?? 0);
 				}
 				if (isSolid(cx + 1, cz)) {
+					const s = spec(wallTiles, "east", wallTileId);
 					walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
-					wallIds.push(wallTileId);
+					wallIds.push(s.tileId);
+					wallRots.push(s.rotation ?? 0);
 				}
 				if (floorVal !== 0) {
 					const feMidY = -tileSize / 2;
 					const nfN = openFloorVal(cx, cz - 1);
 					if (nfN !== null && nfN < floorVal) {
+						const s = spec(floorSkirtTiles, "north", floorTileId);
 						floorEdges.push(makeFaceMatrix(wx, feMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
-						floorEdgeIds.push(floorTileId);
+						floorEdgeIds.push(s.tileId);
+						floorEdgeRots.push(s.rotation ?? 0);
 					}
 					const nfS = openFloorVal(cx, cz + 1);
 					if (nfS !== null && nfS < floorVal) {
+						const s = spec(floorSkirtTiles, "south", floorTileId);
 						floorEdges.push(makeFaceMatrix(wx, feMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
-						floorEdgeIds.push(floorTileId);
+						floorEdgeIds.push(s.tileId);
+						floorEdgeRots.push(s.rotation ?? 0);
 					}
 					const nfW = openFloorVal(cx - 1, cz);
 					if (nfW !== null && nfW < floorVal) {
+						const s = spec(floorSkirtTiles, "west", floorTileId);
 						floorEdges.push(makeFaceMatrix(cx * tileSize, feMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
-						floorEdgeIds.push(floorTileId);
+						floorEdgeIds.push(s.tileId);
+						floorEdgeRots.push(s.rotation ?? 0);
 					}
 					const nfE = openFloorVal(cx + 1, cz);
 					if (nfE !== null && nfE < floorVal) {
+						const s = spec(floorSkirtTiles, "east", floorTileId);
 						floorEdges.push(makeFaceMatrix((cx + 1) * tileSize, feMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
-						floorEdgeIds.push(floorTileId);
+						floorEdgeIds.push(s.tileId);
+						floorEdgeRots.push(s.rotation ?? 0);
 					}
 				}
 				const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
-				function addCeilSkirt(ncVal, mx, mz, ry) {
+				function addCeilSkirt(ncVal, mx, mz, ry, dir) {
+					const s = spec(ceilSkirtTiles, dir, ceilTileId);
 					const h = (ncVal - ceilVal) * offsetStep;
 					const midY = yCurrent - h / 2;
 					ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
-					ceilEdgeIds.push(ceilTileId);
+					ceilEdgeIds.push(s.tileId);
+					ceilEdgeRots.push(s.rotation ?? 0);
+					ceilEdgeHeightScales.push(h / tileSize);
 				}
 				const ncN = openCeilVal(cx, cz - 1);
-				if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx, cz * tileSize, Math.PI);
+				if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx, cz * tileSize, Math.PI, "north");
 				const ncS = openCeilVal(cx, cz + 1);
-				if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx, (cz + 1) * tileSize, 0);
+				if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx, (cz + 1) * tileSize, 0, "south");
 				const ncW = openCeilVal(cx - 1, cz);
-				if (ncW !== null && ncW > ceilVal) addCeilSkirt(ncW, cx * tileSize, wz, -HALF_PI);
+				if (ncW !== null && ncW > ceilVal) addCeilSkirt(ncW, cx * tileSize, wz, -HALF_PI, "west");
 				const ncE = openCeilVal(cx + 1, cz);
-				if (ncE !== null && ncE > ceilVal) addCeilSkirt(ncE, (cx + 1) * tileSize, wz, HALF_PI);
+				if (ncE !== null && ncE > ceilVal) addCeilSkirt(ncE, (cx + 1) * tileSize, wz, HALF_PI, "east");
 			}
 			floorMesh = buildInstancedMesh(floors, floorIds, floorMat, !!atlas, new Float32Array(floorOffsets));
 			scene.add(floorMesh);
 			ceilMesh = buildInstancedMesh(ceils, ceilIds, ceilMat, !!atlas, new Float32Array(ceilOffsets));
 			scene.add(ceilMesh);
-			wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas);
+			wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas, void 0, wallRots);
 			scene.add(wallMesh);
-			floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas);
+			floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas, void 0, floorEdgeRots);
 			scene.add(floorEdgeMesh);
-			ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas);
+			ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, void 0, ceilEdgeRots, ceilEdgeHeightScales);
 			scene.add(ceilEdgeMesh);
 		}
 		const entityGeo = new three.BoxGeometry(tileSize * .35, ceilingH * .55, tileSize * .35);

@@ -1,3 +1,28 @@
+/** UV rotation applied within a tile, in 90° increments (0 = none, 1 = 90° CCW, 2 = 180°, 3 = 270° CCW). */
+export type FaceRotation = 0 | 1 | 2 | 3;
+
+/**
+ * Specifies which atlas tile to use for a single face, with an optional UV rotation.
+ * Rotation is applied within the tile bounds, so the same source tile can be reused
+ * on all four directions without visible seams.
+ */
+export type FaceTileSpec = {
+  tileId: number;
+  /** UV rotation within the tile (0–3). Default: 0. */
+  rotation?: FaceRotation;
+};
+
+/**
+ * Per-direction tile overrides for walls or skirt faces.
+ * Any direction not specified falls back to the caller's default tile ID.
+ */
+export type DirectionFaceMap = {
+  north?: FaceTileSpec;
+  south?: FaceTileSpec;
+  east?:  FaceTileSpec;
+  west?:  FaceTileSpec;
+};
+
 /** One entry in the atlas - UV coords of its tile in normalised 0..1 space. */
 export type TileEntry = {
   id: number;

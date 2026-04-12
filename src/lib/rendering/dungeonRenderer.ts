@@ -29,6 +29,8 @@ import * as THREE from 'three';
 import type { GameHandle } from '../api/createGame';
 import type { EntityBase } from '../entities/types';
 import { BASIC_ATLAS_VERT, BASIC_ATLAS_FRAG, makeBasicAtlasUniforms } from './basicLighting';
+import type { FaceTileSpec, DirectionFaceMap } from './tileAtlas';
+export type { FaceTileSpec, DirectionFaceMap } from './tileAtlas';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -80,6 +82,22 @@ export type DungeonRendererOptions = {
   ceilTileId?: number;
   /** Atlas tile index (0-based) for wall faces. Default: 0. */
   wallTileId?: number;
+  /**
+   * Per-direction tile overrides for wall faces.
+   * Each entry may specify a different tile ID and/or UV rotation (0–3 × 90°).
+   * Falls back to `wallTileId` for any direction not specified.
+   */
+  wallTiles?: DirectionFaceMap;
+  /**
+   * Per-direction tile overrides for floor skirt (edge) faces.
+   * Falls back to `floorTileId` for any direction not specified.
+   */
+  floorSkirtTiles?: DirectionFaceMap;
+  /**
+   * Per-direction tile overrides for ceiling skirt (edge) faces.
+   * Falls back to `ceilTileId` for any direction not specified.
+   */
+  ceilSkirtTiles?: DirectionFaceMap;
 };
 
 export type DungeonRenderer = {
@@ -126,6 +144,8 @@ function buildInstancedMesh(
   material: THREE.Material,
   useAtlas: boolean,
   heightOffsets?: Float32Array,
+  uvRotations?: number[],
+  uvHeightScales?: number[],
 ): THREE.InstancedMesh {
   const geo = new THREE.PlaneGeometry(1, 1);
 
@@ -136,6 +156,14 @@ function buildInstancedMesh(
 
     const offsets = heightOffsets ?? new Float32Array(matrices.length);
     geo.setAttribute('aHeightOffset', new THREE.InstancedBufferAttribute(offsets, 1));
+
+    const rotArr = new Float32Array(matrices.length);
+    if (uvRotations) uvRotations.forEach((r, i) => { rotArr[i] = r; });
+    geo.setAttribute('aUvRotation', new THREE.InstancedBufferAttribute(rotArr, 1));
+
+    const hsArr = new Float32Array(matrices.length).fill(1.0);
+    if (uvHeightScales) uvHeightScales.forEach((s, i) => { hsArr[i] = s; });
+    geo.setAttribute('aUvHeightScale', new THREE.InstancedBufferAttribute(hsArr, 1));
   }
 
   const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
@@ -161,10 +189,13 @@ export function createDungeonRenderer(
   const fogHex      = options.fogColor      ?? '#000000';
   const lerpFactor  = options.lerpFactor    ?? 0.18;
   const fogColor    = new THREE.Color(fogHex);
-  const atlas       = options.atlas;
-  const floorTileId = options.floorTileId   ?? 0;
-  const ceilTileId  = options.ceilTileId    ?? 0;
-  const wallTileId  = options.wallTileId    ?? 0;
+  const atlas           = options.atlas;
+  const floorTileId     = options.floorTileId    ?? 0;
+  const ceilTileId      = options.ceilTileId     ?? 0;
+  const wallTileId      = options.wallTileId     ?? 0;
+  const wallTiles       = options.wallTiles;
+  const floorSkirtTiles = options.floorSkirtTiles;
+  const ceilSkirtTiles  = options.ceilSkirtTiles;
 
   // ── WebGL renderer ────────────────────────────────────────────────────────
   const glRenderer = new THREE.WebGLRenderer({ antialias: false });
@@ -262,6 +293,12 @@ export function createDungeonRenderer(
     const floorOffData  = outputs.textures.floorHeightOffset?.image.data  as Uint8Array | undefined;
     const ceilOffData   = outputs.textures.ceilingHeightOffset?.image.data as Uint8Array | undefined;
 
+    // Helper: resolve a FaceTileSpec from a DirectionFaceMap for a given direction,
+    // falling back to a plain tile ID with no rotation.
+    function spec(map: DirectionFaceMap | undefined, dir: 'north' | 'south' | 'east' | 'west', fallbackId: number): FaceTileSpec {
+      return map?.[dir] ?? { tileId: fallbackId, rotation: 0 };
+    }
+
     const floors:        THREE.Matrix4[] = [];
     const ceils:         THREE.Matrix4[] = [];
     const walls:         THREE.Matrix4[] = [];
@@ -274,6 +311,10 @@ export function createDungeonRenderer(
     const ceilEdgeIds:   number[]        = [];
     const floorOffsets:  number[]        = [];
     const ceilOffsets:   number[]        = [];
+    const wallRots:           number[]        = [];
+    const floorEdgeRots:      number[]        = [];
+    const ceilEdgeRots:       number[]        = [];
+    const ceilEdgeHeightScales: number[]      = [];
 
     function isSolid(cx: number, cz: number) {
       if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
@@ -316,35 +357,39 @@ export function createDungeonRenderer(
         ceilIds.push(ceilTileId);
         ceilOffsets.push(-(ceilVal - 128) * offsetStep); // vertex shader applies this (inverted)
 
-        if (isSolid(cx, cz - 1)) { walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
-        if (isSolid(cx, cz + 1)) { walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
-        if (isSolid(cx - 1, cz)) { walls.push(makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
-        if (isSolid(cx + 1, cz)) { walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
+        // Walls — north/south/west/east with per-direction tile + rotation.
+        if (isSolid(cx, cz - 1)) { const s = spec(wallTiles, 'north', wallTileId); walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize,         0, 0,         0, tileSize, ceilingH)); wallIds.push(s.tileId); wallRots.push(s.rotation ?? 0); }
+        if (isSolid(cx, cz + 1)) { const s = spec(wallTiles, 'south', wallTileId); walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize,   0, Math.PI,   0, tileSize, ceilingH)); wallIds.push(s.tileId); wallRots.push(s.rotation ?? 0); }
+        if (isSolid(cx - 1, cz)) { const s = spec(wallTiles, 'west',  wallTileId); walls.push(makeFaceMatrix(cx * tileSize,     wallMidY, wz,       0, HALF_PI,   0, tileSize, ceilingH)); wallIds.push(s.tileId); wallRots.push(s.rotation ?? 0); }
+        if (isSolid(cx + 1, cz)) { const s = spec(wallTiles, 'east',  wallTileId); walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz,     0, -HALF_PI,  0, tileSize, ceilingH)); wallIds.push(s.tileId); wallRots.push(s.rotation ?? 0); }
 
         // Voxel-style floor edge skirts: side faces of the floor cube (top=y0, extends down).
         // Only emit when the open neighbour has a different floor offset (Minecraft face-culling rule).
         if (floorVal !== 0) {
           const feMidY = -tileSize / 2;
           // Outward-facing = opposite rotations to inward-facing walls.
-          const nfN = openFloorVal(cx, cz - 1); if (nfN !== null && nfN < floorVal) { floorEdges.push(makeFaceMatrix(wx,               feMidY, cz * tileSize,         0, Math.PI,    0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
-          const nfS = openFloorVal(cx, cz + 1); if (nfS !== null && nfS < floorVal) { floorEdges.push(makeFaceMatrix(wx,               feMidY, (cz + 1) * tileSize,   0, 0,          0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
-          const nfW = openFloorVal(cx - 1, cz); if (nfW !== null && nfW < floorVal) { floorEdges.push(makeFaceMatrix(cx * tileSize,     feMidY, wz,                    0, -HALF_PI,   0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
-          const nfE = openFloorVal(cx + 1, cz); if (nfE !== null && nfE < floorVal) { floorEdges.push(makeFaceMatrix((cx+1) * tileSize, feMidY, wz,                    0, HALF_PI,    0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+          const nfN = openFloorVal(cx, cz - 1); if (nfN !== null && nfN < floorVal) { const s = spec(floorSkirtTiles, 'north', floorTileId); floorEdges.push(makeFaceMatrix(wx,               feMidY, cz * tileSize,         0, Math.PI,    0, tileSize, tileSize)); floorEdgeIds.push(s.tileId); floorEdgeRots.push(s.rotation ?? 0); }
+          const nfS = openFloorVal(cx, cz + 1); if (nfS !== null && nfS < floorVal) { const s = spec(floorSkirtTiles, 'south', floorTileId); floorEdges.push(makeFaceMatrix(wx,               feMidY, (cz + 1) * tileSize,   0, 0,          0, tileSize, tileSize)); floorEdgeIds.push(s.tileId); floorEdgeRots.push(s.rotation ?? 0); }
+          const nfW = openFloorVal(cx - 1, cz); if (nfW !== null && nfW < floorVal) { const s = spec(floorSkirtTiles, 'west',  floorTileId); floorEdges.push(makeFaceMatrix(cx * tileSize,     feMidY, wz,                    0, -HALF_PI,   0, tileSize, tileSize)); floorEdgeIds.push(s.tileId); floorEdgeRots.push(s.rotation ?? 0); }
+          const nfE = openFloorVal(cx + 1, cz); if (nfE !== null && nfE < floorVal) { const s = spec(floorSkirtTiles, 'east',  floorTileId); floorEdges.push(makeFaceMatrix((cx+1) * tileSize, feMidY, wz,                    0, HALF_PI,    0, tileSize, tileSize)); floorEdgeIds.push(s.tileId); floorEdgeRots.push(s.rotation ?? 0); }
         }
 
         // Voxel-style ceiling edge skirts: height = exact difference between the two ceiling levels.
         // Current cell's actual ceiling Y in world space:
         const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
-        function addCeilSkirt(ncVal: number, mx: number, mz: number, ry: number) {
+        function addCeilSkirt(ncVal: number, mx: number, mz: number, ry: number, dir: 'north' | 'south' | 'east' | 'west') {
+          const s = spec(ceilSkirtTiles, dir, ceilTileId);
           const h = (ncVal - ceilVal) * offsetStep; // height of the step
           const midY = yCurrent - h / 2;            // centre between the two ceiling levels
           ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
-          ceilEdgeIds.push(ceilTileId);
+          ceilEdgeIds.push(s.tileId);
+          ceilEdgeRots.push(s.rotation ?? 0);
+          ceilEdgeHeightScales.push(h / tileSize);  // clip UV so bricks stay square
         }
-        const ncN = openCeilVal(cx, cz - 1); if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx,               cz * tileSize,         Math.PI);
-        const ncS = openCeilVal(cx, cz + 1); if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx,               (cz + 1) * tileSize,   0);
-        const ncW = openCeilVal(cx - 1, cz); if (ncW !== null && ncW > ceilVal) addCeilSkirt(ncW, cx * tileSize,     wz,                    -HALF_PI);
-        const ncE = openCeilVal(cx + 1, cz); if (ncE !== null && ncE > ceilVal) addCeilSkirt(ncE, (cx+1) * tileSize, wz,                    HALF_PI);
+        const ncN = openCeilVal(cx, cz - 1); if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx,               cz * tileSize,         Math.PI,  'north');
+        const ncS = openCeilVal(cx, cz + 1); if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx,               (cz + 1) * tileSize,   0,         'south');
+        const ncW = openCeilVal(cx - 1, cz); if (ncW !== null && ncW > ceilVal) addCeilSkirt(ncW, cx * tileSize,     wz,                    -HALF_PI,  'west');
+        const ncE = openCeilVal(cx + 1, cz); if (ncE !== null && ncE > ceilVal) addCeilSkirt(ncE, (cx+1) * tileSize, wz,                    HALF_PI,   'east');
       }
     }
 
@@ -354,13 +399,13 @@ export function createDungeonRenderer(
     ceilMesh = buildInstancedMesh(ceils, ceilIds, ceilMat, !!atlas, new Float32Array(ceilOffsets));
     scene.add(ceilMesh);
 
-    wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas);
+    wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas, undefined, wallRots);
     scene.add(wallMesh);
 
-    floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas);
+    floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas, undefined, floorEdgeRots);
     scene.add(floorEdgeMesh);
 
-    ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas);
+    ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, undefined, ceilEdgeRots, ceilEdgeHeightScales);
     scene.add(ceilEdgeMesh);
   }
 

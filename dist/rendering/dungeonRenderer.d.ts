@@ -1,5 +1,7 @@
 import { GameHandle } from '../api/createGame';
 import { EntityBase } from '../entities/types';
+import { DirectionFaceMap } from './tileAtlas';
+export type { FaceTileSpec, DirectionFaceMap } from './tileAtlas';
 /** Describes a sprite-sheet atlas used for tile texturing. */
 export type TileAtlasConfig = {
     /**
@@ -45,6 +47,22 @@ export type DungeonRendererOptions = {
     ceilTileId?: number;
     /** Atlas tile index (0-based) for wall faces. Default: 0. */
     wallTileId?: number;
+    /**
+     * Per-direction tile overrides for wall faces.
+     * Each entry may specify a different tile ID and/or UV rotation (0–3 × 90°).
+     * Falls back to `wallTileId` for any direction not specified.
+     */
+    wallTiles?: DirectionFaceMap;
+    /**
+     * Per-direction tile overrides for floor skirt (edge) faces.
+     * Falls back to `floorTileId` for any direction not specified.
+     */
+    floorSkirtTiles?: DirectionFaceMap;
+    /**
+     * Per-direction tile overrides for ceiling skirt (edge) faces.
+     * Falls back to `ceilTileId` for any direction not specified.
+     */
+    ceilSkirtTiles?: DirectionFaceMap;
 };
 export type DungeonRenderer = {
     /**
