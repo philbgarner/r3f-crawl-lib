@@ -240,7 +240,10 @@ Dependency-injection layer that makes the server authoritative for all player ac
 - `api/createGame.ts` — `GameOptions.transport`, `PlayerOptions.id`, commit intercept, reconciliation wiring
 
 **Server:**
-- `src/server/index.js` — Express + `ws` authoritative server; validates moves against solid map sent by the host; broadcasts state to all room peers; serves the multiplayer example and static assets on a single port
+- `src/server/index.js` — Express + `ws` authoritative server; generates the dungeon server-side from the host's config so the solid map and spawn position are authoritative; validates moves; broadcasts state to all room peers; serves the multiplayer example and static assets on a single port
+- `src/server/dungeon-entry.ts` — thin build entry that re-exports `generateBspDungeon` for the server build
+- `src/server/three-shim.js` — minimal `THREE.DataTexture` shim so `bsp.ts` runs in Node without a real GPU or browser context; only `image.data` is needed server-side
+- `vite.config.server.ts` — separate Vite config that compiles the server dungeon module with `three` aliased to the shim; outputs `dist/server/dungeon.js`
 
 **Example:**
 - `examples/multiplayer/` — mirrors the basic example but connects to the server first; host sends solid data after `generate()`; other players rendered as billboard entities via `"network-state"` events

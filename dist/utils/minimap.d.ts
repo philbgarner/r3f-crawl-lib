@@ -1,4 +1,4 @@
-import { BspDungeonOutputs } from '../dungeon/bsp';
+import type { BspDungeonOutputs } from "../dungeon/bsp";
 export type MinimapState = {
     width: number;
     height: number;

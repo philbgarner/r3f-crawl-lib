@@ -1,4 +1,4 @@
-import { GridPos } from './astar';
+import type { GridPos } from "./astar";
 export type SpatialShape = "chebyshev" | "euclidean" | "manhattan";
 /**
  * Returns all grid positions within `radius` of (cx, cy) using the chosen metric.

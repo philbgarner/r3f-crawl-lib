@@ -2030,6 +2030,10 @@ function makeTurnsHandle(internal, dungeonHandle) {
 			return internal.turnCounter;
 		},
 		commit(action) {
+			if (internal.options.transport) {
+				internal.options.transport.send(action);
+				return;
+			}
 			if (!internal.turnState || !internal.dungeonOutputs) return;
 			const solid = internal.solidData;
 			const { width, height } = internal.dungeonOutputs;
@@ -2333,8 +2337,9 @@ function createGame(canvas, options) {
 	const events = createEventEmitter();
 	const factions = createFactionRegistryFromTable(options.combat?.factions ?? DEFAULT_FACTION_TABLE);
 	const playerOpts = options.player ?? {};
+	const playerActorId = playerOpts.id ?? "player";
 	const playerEntity = {
-		id: "player",
+		id: playerActorId,
 		kind: "player",
 		type: "player",
 		sprite: "player",
@@ -2363,10 +2368,10 @@ function createGame(canvas, options) {
 		dungeonOutputs: null,
 		solidData: null,
 		turnState: null,
-		playerActorId: "player",
+		playerActorId,
 		playerState,
 		playerHandle: createPlayerHandle(playerState),
-		entityById: new Map([["player", playerEntity]]),
+		entityById: new Map([[playerActorId, playerEntity]]),
 		decorations: [],
 		paintMap: /* @__PURE__ */ new Map(),
 		passages: [],
@@ -2384,6 +2389,40 @@ function createGame(canvas, options) {
 	let generated = false;
 	dungeonHandle = makeDungeonHandle(internal);
 	turnsHandle = makeTurnsHandle(internal, dungeonHandle);
+	if (options.transport) options.transport.onStateUpdate((update) => {
+		if (internal.destroyed) return;
+		if (internal.turnState) {
+			let actors = { ...internal.turnState.actors };
+			for (const [pid, ps] of Object.entries(update.players)) {
+				const actor = actors[pid];
+				if (actor) actors[pid] = {
+					...actor,
+					x: ps.x,
+					y: ps.y,
+					hp: ps.hp,
+					alive: ps.alive
+				};
+			}
+			internal.turnState = {
+				...internal.turnState,
+				actors,
+				awaitingPlayerInput: true
+			};
+		}
+		const myState = update.players[internal.playerActorId];
+		if (myState) {
+			internal.playerState.entity.x = myState.x;
+			internal.playerState.entity.z = myState.y;
+			internal.playerState.entity.hp = myState.hp;
+			internal.playerState.entity.alive = myState.alive;
+			if (myState.facing !== void 0) internal.playerState.facing = myState.facing;
+		}
+		syncAllEntitiesFromTurnState(internal);
+		internal.turnCounter = update.turn;
+		internal.events.emit("turn", { turn: update.turn });
+		internal.events.emit("network-state", update);
+		updateFovAndMinimap(internal);
+	});
 	const game = {
 		get player() {
 			return internal.playerHandle;
@@ -2932,6 +2971,84 @@ function createDungeonRenderer(element, game, options = {}) {
 	};
 }
 //#endregion
-export { attachDecorator, attachKeybindings, attachMinimap, attachSpawner, attachSurfacePainter, createDecoration, createDungeonRenderer, createEnemy, createGame, createItem, createNpc, loadTiledMap };
+//#region src/lib/transport/websocket.ts
+function createWebSocketTransport(url) {
+	let ws = null;
+	let _playerId = null;
+	const updateHandlers = [];
+	function dispatch(raw) {
+		let msg;
+		try {
+			msg = JSON.parse(raw);
+		} catch {
+			return;
+		}
+		if (msg.type === "state") {
+			const update = msg;
+			for (const h of updateHandlers) h(update);
+		}
+	}
+	return {
+		get playerId() {
+			return _playerId;
+		},
+		connect() {
+			return new Promise((resolve, reject) => {
+				ws = new WebSocket(url);
+				ws.onopen = () => {
+					ws.send(JSON.stringify({
+						type: "join",
+						roomId: "default"
+					}));
+				};
+				ws.onmessage = (evt) => {
+					let msg;
+					try {
+						msg = JSON.parse(evt.data);
+					} catch {
+						return;
+					}
+					if (msg.type === "welcome") {
+						_playerId = msg.playerId;
+						const resolved = {
+							playerId: msg.playerId,
+							isHost: msg.isHost
+						};
+						const cfg = msg.dungeonConfig;
+						if (cfg !== void 0) resolved.dungeonConfig = cfg;
+						resolve(resolved);
+						return;
+					}
+					dispatch(evt.data);
+				};
+				ws.onerror = (e) => reject(e);
+				ws.onclose = () => {};
+			});
+		},
+		send(action) {
+			if (!ws || !_playerId) return;
+			ws.send(JSON.stringify({
+				type: "action",
+				action
+			}));
+		},
+		onStateUpdate(handler) {
+			updateHandlers.push(handler);
+		},
+		initDungeon(payload) {
+			if (!ws || !_playerId) return;
+			ws.send(JSON.stringify({
+				type: "dungeon_init",
+				...payload
+			}));
+		},
+		disconnect() {
+			ws?.close();
+			ws = null;
+		}
+	};
+}
+//#endregion
+export { attachDecorator, attachKeybindings, attachMinimap, attachSpawner, attachSurfacePainter, createDecoration, createDungeonRenderer, createEnemy, createGame, createItem, createNpc, createWebSocketTransport, loadTiledMap };
 
 //# sourceMappingURL=r3f-crawl-lib.js.map

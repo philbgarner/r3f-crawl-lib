@@ -1,4 +1,4 @@
-import { HiddenPassage } from '../entities/types';
+import type { HiddenPassage } from "../entities/types";
 export declare const PASSAGE_NONE = 0;
 export declare const PASSAGE_DISABLED = 1;
 export declare const PASSAGE_ENABLED = 2;

@@ -187,6 +187,8 @@ function startGame(transport, { playerId, isHost, dungeonConfig }) {
 
   // 'network-state' is emitted by createGame whenever the server pushes a
   // state update. Use it to rebuild the list of other players for rendering.
+  // Also push the update directly to the renderer so remote players' moves
+  // are visible immediately — not deferred until the local player's next turn.
   game.events.on('network-state', (update) => {
     const allPlayers = Object.entries(update.players);
     playerCountEl.textContent = String(allPlayers.length);
@@ -209,6 +211,9 @@ function startGame(transport, { playerId, isHost, dungeonConfig }) {
         faction: 'player',
         tick: 0,
       }));
+
+    // Push to renderer immediately so remote movement is reflected in real-time
+    if (renderer) renderer.setEntities([...enemies, ...otherPlayerEntities]);
   });
 
   game.events.on('audio', ({ name }) => {

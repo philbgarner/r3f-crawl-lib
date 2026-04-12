@@ -1,6 +1,6 @@
-import { TurnScheduler } from './scheduler';
-import { ActorId, PlayerActor, MonsterActor, TurnAction, ActionCost } from './types';
-import { TurnEvent } from './events';
+import { TurnScheduler } from "./scheduler";
+import type { ActorId, PlayerActor, MonsterActor, TurnAction, ActionCost } from "./types";
+import type { TurnEvent } from "./events";
 export type DecideResult = {
     action: TurnAction;
     /** Partial patch applied to the monster before the action executes. */

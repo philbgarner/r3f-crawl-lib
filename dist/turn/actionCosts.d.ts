@@ -1,4 +1,4 @@
-import { TurnAction } from './types';
+import type { TurnAction } from "./types";
 /** Base time unit. A speed-1 actor costs BASE_TIME per turn; speed-10 costs BASE_TIME/10. */
 export declare const BASE_TIME = 100;
 /**

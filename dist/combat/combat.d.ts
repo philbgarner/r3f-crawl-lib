@@ -1,6 +1,6 @@
-import { EntityBase } from '../entities/types';
-import { EventEmitter } from '../events/eventEmitter';
-import { FactionRegistry } from './factions';
+import type { EntityBase } from "../entities/types";
+import type { EventEmitter } from "../events/eventEmitter";
+import type { FactionRegistry } from "./factions";
 /**
  * A damage formula receives attacker and defender and returns the raw damage
  * amount (before any clamping). Return 0 to signal a miss (the 'miss' event

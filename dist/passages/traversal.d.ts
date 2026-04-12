@@ -1,4 +1,4 @@
-import { HiddenPassage } from '../entities/types';
+import type { HiddenPassage } from "../entities/types";
 export type PassageTraversalState = {
     kind: "idle";
 } | {

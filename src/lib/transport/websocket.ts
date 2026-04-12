@@ -28,6 +28,7 @@ export function createWebSocketTransport(url: string): ActionTransport {
   let ws: WebSocket | null = null;
   let _playerId: string | null = null;
   const updateHandlers: Array<(update: ServerStateUpdate) => void> = [];
+  const chatHandlers: Array<(msg: { playerId: string; text: string }) => void> = [];
 
   function dispatch(raw: string): void {
     let msg: Record<string, unknown>;
@@ -40,6 +41,11 @@ export function createWebSocketTransport(url: string): ActionTransport {
     if (msg.type === 'state') {
       const update = msg as unknown as ServerStateUpdate & { type: string };
       for (const h of updateHandlers) h(update);
+    }
+
+    if (msg.type === 'chat') {
+      const payload = { playerId: msg.playerId as string, text: msg.text as string };
+      for (const h of chatHandlers) h(payload);
     }
   }
 
@@ -101,6 +107,15 @@ export function createWebSocketTransport(url: string): ActionTransport {
     disconnect() {
       ws?.close();
       ws = null;
+    },
+
+    sendChat(text: string) {
+      if (!ws || !_playerId) return;
+      ws.send(JSON.stringify({ type: 'chat', text }));
+    },
+
+    onChat(handler: (msg: { playerId: string; text: string }) => void) {
+      chatHandlers.push(handler);
     },
   };
 }

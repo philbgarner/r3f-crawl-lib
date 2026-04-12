@@ -1,5 +1,3 @@
-import { GameHandle } from '../api/createGame';
-import { EntityBase } from '../entities/types';
 /**
  * dungeonRenderer.ts
  *
@@ -27,6 +25,8 @@ import { EntityBase } from '../entities/types';
  *   game.events.on('turn', () => renderer.setEntities(enemies));
  */
 import * as THREE from 'three';
+import type { GameHandle } from '../api/createGame';
+import type { EntityBase } from '../entities/types';
 /** Describes a sprite-sheet atlas used for tile texturing. */
 export type TileAtlasConfig = {
     /**

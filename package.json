@@ -20,10 +20,11 @@
   ],
   "scripts": {
     "build": "tsc && vite build",
+    "build:server": "vite build --config vite.config.server.ts",
     "typecheck": "tsc --noEmit",
     "dev": "vite build --watch",
     "examples": "npx serve .",
-    "multiplayer": "node src/server/index.js"
+    "multiplayer": "npm run build:server && node src/server/index.js"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",

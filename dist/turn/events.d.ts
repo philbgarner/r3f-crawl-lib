@@ -1,4 +1,4 @@
-import { ActorId } from './types';
+import type { ActorId } from "./types";
 /** Damage dealt to any actor. */
 export type DamageEvent = {
     kind: "damage";

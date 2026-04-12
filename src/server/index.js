@@ -5,9 +5,10 @@
 // Responsibilities:
 //  - Accepts WebSocket connections from browser clients.
 //  - Tracks canonical player positions for each room.
-//  - Validates move actions against the dungeon solid map (sent by the host
-//    client after generate()). Move validation falls back to "trust the client"
-//    until the host has sent the dungeon data.
+//  - Generates the dungeon server-side from the config the host sends so the
+//    server is the sole source of truth for the solid map and spawn point.
+//    Move validation is exact from the first action — no "trust the client"
+//    fallback needed.
 //  - Broadcasts a state snapshot to all clients in the room after every
 //    accepted action so every peer stays in sync.
 //  - Serves the multiplayer example and all static assets over HTTP so a
@@ -17,8 +18,7 @@
 //
 //   Client → Server:
 //     { type: 'join', roomId: string }
-//     { type: 'dungeon_init', solid: number[], width: number, height: number,
-//                             config: object }        (host only, after generate)
+//     { type: 'dungeon_init', config: object }   (host only, after generate)
 //     { type: 'action', action: { kind, dx?, dy?, meta? } }
 //
 //   Server → Client:
@@ -34,6 +34,7 @@ import express from 'express'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import os from 'node:os'
+import { generateBspDungeon } from '../../dist/server/dungeon.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..', '..')
@@ -55,6 +56,8 @@ const PORT = Number(process.env.PORT ?? 3001)
  *   width: number,
  *   height: number,
  *   dungeonConfig: object | null,
+ *   spawnX: number,
+ *   spawnY: number,
  *   turn: number,
  * }} Room
  */
@@ -70,6 +73,8 @@ function getOrCreateRoom(roomId) {
       width: 0,
       height: 0,
       dungeonConfig: null,
+      spawnX: 1,
+      spawnY: 1,
       turn: 0,
     })
   }
@@ -91,6 +96,28 @@ function isOccupied(room, x, y, excludeId) {
     if (id !== excludeId && p.alive && p.x === x && p.y === y) return true
   }
   return false
+}
+
+/**
+ * Return the first walkable, unoccupied cell at or adjacent to (preferX, preferY).
+ * Tries the centre first, then the 4 cardinal neighbours, then the 4 diagonals.
+ * Falls back to the preferred position if nothing is free (shouldn't happen in a
+ * normal dungeon).
+ */
+function findSpawnPos(room, preferX, preferY) {
+  const candidates = [
+    [0, 0],
+    [0, -1], [0, 1], [-1, 0], [1, 0],
+    [-1, -1], [-1, 1], [1, -1], [1, 1],
+  ]
+  for (const [dx, dy] of candidates) {
+    const x = preferX + dx
+    const y = preferY + dy
+    if (isWalkable(room, x, y) && !isOccupied(room, x, y, null)) {
+      return { x, y }
+    }
+  }
+  return { x: preferX, y: preferY }
 }
 
 // ---------------------------------------------------------------------------
@@ -193,8 +220,12 @@ wss.on('connection', (ws) => {
       playerId = `player_${nextPlayerId++}`
       const isHost = room.players.size === 0
 
+      // Place the player at a free cell near the spawn point. If the dungeon
+      // hasn't been initialised yet (host hasn't sent dungeon_init) the spawn
+      // defaults to (1,1) and will be corrected when dungeon_init arrives.
+      const spawnPos = findSpawnPos(room, room.spawnX, room.spawnY)
       room.players.set(playerId, {
-        x: 1, y: 1,
+        x: spawnPos.x, y: spawnPos.y,
         hp: 30, maxHp: 30,
         alive: true,
         facing: 0,
@@ -220,10 +251,37 @@ wss.on('connection', (ws) => {
 
     // ── dungeon_init ───────────────────────────────────────────────────────
     if (msg.type === 'dungeon_init') {
-      room.solid = new Uint8Array(msg.solid)
-      room.width = Number(msg.width)
-      room.height = Number(msg.height)
-      room.dungeonConfig = msg.config ?? null
+      const config = msg.config ?? {}
+      room.dungeonConfig = config
+
+      // Generate the dungeon server-side so the solid map and spawn point are
+      // authoritative — clients cannot send bad solid data.
+      try {
+        const dungeon = generateBspDungeon(config)
+        room.solid  = dungeon.textures.solid.image.data
+        room.width  = dungeon.width
+        room.height = dungeon.height
+
+        // Derive spawn from startRoomId centre (same logic as the client).
+        const startRoom = dungeon.rooms.get(dungeon.startRoomId)
+        if (startRoom) {
+          room.spawnX = Math.floor(startRoom.rect.x + startRoom.rect.w / 2)
+          room.spawnY = Math.floor(startRoom.rect.y + startRoom.rect.h / 2)
+        }
+
+        // Reposition any players already in the room (including the host who
+        // sent this message) to a valid spawn cell.
+        for (const [pid, player] of room.players) {
+          const pos = findSpawnPos(room, room.spawnX, room.spawnY)
+          player.x = pos.x
+          player.y = pos.y
+        }
+
+        // Broadcast updated positions so clients reflect the correction.
+        broadcastAll(room, stateSnapshot(room))
+      } catch (err) {
+        console.error('dungeon_init: failed to generate dungeon', err)
+      }
       return
     }
 
@@ -236,6 +294,13 @@ wss.on('connection', (ws) => {
 
       // Broadcast full state to everyone in the room
       broadcastAll(room, stateSnapshot(room))
+    }
+
+    // ── chat ───────────────────────────────────────────────────────────────
+    if (msg.type === 'chat') {
+      const text = String(msg.text ?? '').trim().slice(0, 200)
+      if (!text) return
+      broadcastAll(room, { type: 'chat', playerId, text })
     }
   })
 

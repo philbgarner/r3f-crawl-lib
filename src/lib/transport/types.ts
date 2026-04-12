@@ -88,4 +88,14 @@ export type ActionTransport = {
 
   /** Server-assigned player ID. Null before connect() resolves. */
   readonly playerId: string | null;
+
+  /**
+   * Send a chat message to all players in the room.
+   */
+  sendChat(text: string): void;
+
+  /**
+   * Register a handler that fires whenever a chat message is received.
+   */
+  onChat(handler: (msg: { playerId: string; text: string }) => void): void;
 };
