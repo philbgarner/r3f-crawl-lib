@@ -35,7 +35,8 @@ import { createPlayerHandle } from "./player";
 import type { PlayerHandle, PlayerState } from "./player";
 import { createKeybindings } from "./keybindings";
 import type { KeybindingsOptions, KeybindingsHandle } from "./keybindings";
-import { makeRng } from "../utils/rng";
+import { makeRng } from "../utils/rng"
+import type { ActionTransport } from "../transport/types";
 
 // ---------------------------------------------------------------------------
 // Public room shape (player-facing subset of RoomInfo)
@@ -121,6 +122,9 @@ export type CombatHandle = {
 // ---------------------------------------------------------------------------
 
 export type PlayerOptions = {
+  /** Override the auto-generated player ID. Required when using a transport
+   *  so the local ID matches the server-assigned one. */
+  id?: string;
   x?: number;
   z?: number;
   hp?: number;
@@ -197,6 +201,15 @@ export type GameOptions = {
   passages?: PassagesOptions;
   turns?: TurnsOptions;
   rendering?: RenderingOptions;
+  /**
+   * Optional action transport. When set, game.turns.commit() forwards actions
+   * to the server instead of applying them locally. The server validates each
+   * action and broadcasts a state update; createGame() reconciles that update
+   * back into the local turn state automatically.
+   *
+   * Omit for single-player — no runtime overhead at all.
+   */
+  transport?: ActionTransport;
 };
 
 // ---------------------------------------------------------------------------
@@ -629,6 +642,15 @@ function makeTurnsHandle(internal: GameInternal, dungeonHandle: DungeonHandle): 
     get turn() { return internal.turnCounter; },
 
     commit(action: TurnAction) {
+      // When a transport is configured, forward the action to the server.
+      // The server validates it, updates canonical state, and broadcasts a
+      // ServerStateUpdate. createGame() wires onStateUpdate() to reconcile
+      // that update back into internal state and re-emit the "turn" event.
+      if (internal.options.transport) {
+        internal.options.transport.send(action);
+        return;
+      }
+
       if (!internal.turnState || !internal.dungeonOutputs) return;
 
       const solid = internal.solidData!;
@@ -1064,8 +1086,9 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
 
   // Player entity
   const playerOpts = options.player ?? {};
+  const playerActorId = playerOpts.id ?? "player";
   const playerEntity: EntityBase = {
-    id: "player",
+    id: playerActorId,
     kind: "player",
     type: "player",
     sprite: "player",
@@ -1096,10 +1119,10 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
     dungeonOutputs: null,
     solidData: null,
     turnState: null,
-    playerActorId: "player",
+    playerActorId,
     playerState,
     playerHandle: createPlayerHandle(playerState),
-    entityById: new Map([["player", playerEntity]]),
+    entityById: new Map([[playerActorId, playerEntity]]),
     decorations: [],
     paintMap: new Map(),
     passages: [],
@@ -1119,6 +1142,49 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
 
   dungeonHandle = makeDungeonHandle(internal);
   turnsHandle = makeTurnsHandle(internal, dungeonHandle);
+
+  // Wire transport reconciliation. Runs on every server state broadcast and
+  // patches canonical positions/hp into the local turn state, then re-emits
+  // the "turn" event so the UI and renderer stay in sync.
+  if (options.transport) {
+    options.transport.onStateUpdate((update) => {
+      if (internal.destroyed) return;
+
+      if (internal.turnState) {
+        let actors = { ...internal.turnState.actors };
+        for (const [pid, ps] of Object.entries(update.players)) {
+          const actor = actors[pid];
+          if (actor) {
+            actors[pid] = { ...actor, x: ps.x, y: ps.y, hp: ps.hp, alive: ps.alive };
+          }
+        }
+        internal.turnState = {
+          ...internal.turnState,
+          actors,
+          awaitingPlayerInput: true,
+        };
+      }
+
+      // Sync own player's reactive state
+      const myState = update.players[internal.playerActorId];
+      if (myState) {
+        internal.playerState.entity.x = myState.x;
+        internal.playerState.entity.z = myState.y;
+        internal.playerState.entity.hp = myState.hp;
+        internal.playerState.entity.alive = myState.alive;
+        if (myState.facing !== undefined) {
+          internal.playerState.facing = myState.facing;
+        }
+      }
+
+      syncAllEntitiesFromTurnState(internal);
+      internal.turnCounter = update.turn;
+      internal.events.emit("turn", { turn: update.turn });
+      // Also broadcast the raw network state so examples can render other players
+      internal.events.emit("network-state" as Parameters<typeof internal.events.emit>[0], update as never);
+      updateFovAndMinimap(internal);
+    });
+  }
 
   const game: GameHandle = {
     get player() { return internal.playerHandle; },

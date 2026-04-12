@@ -8,6 +8,7 @@ import { HiddenPassage, EntityBase } from '../entities/types';
 import { DecorationEntity } from '../entities/factory';
 import { PlayerHandle } from './player';
 import { KeybindingsOptions } from './keybindings';
+import { ActionTransport } from '../transport/types';
 export type PublicRoom = {
     id: number;
     type: "room" | "corridor";
@@ -52,6 +53,9 @@ export type CombatHandle = {
     factions: FactionRegistry;
 };
 export type PlayerOptions = {
+    /** Override the auto-generated player ID. Required when using a transport
+     *  so the local ID matches the server-assigned one. */
+    id?: string;
     x?: number;
     z?: number;
     hp?: number;
@@ -142,6 +146,15 @@ export type GameOptions = {
     passages?: PassagesOptions;
     turns?: TurnsOptions;
     rendering?: RenderingOptions;
+    /**
+     * Optional action transport. When set, game.turns.commit() forwards actions
+     * to the server instead of applying them locally. The server validates each
+     * action and broadcasts a state update; createGame() reconciles that update
+     * back into the local turn state automatically.
+     *
+     * Omit for single-player — no runtime overhead at all.
+     */
+    transport?: ActionTransport;
 };
 export type GameHandle = {
     player: PlayerHandle;

@@ -55,6 +55,9 @@ src/lib/
     player.ts
     actions.ts
     keybindings.ts
+  transport/
+    types.ts
+    websocket.ts
   index.ts
 ```
 
@@ -227,6 +230,26 @@ src/lib/
 
 ---
 
+### Multiplayer action transport (optional middleware)
+
+Dependency-injection layer that makes the server authoritative for all player actions. When `GameOptions.transport` is set, `game.turns.commit()` forwards actions to the server instead of applying them locally; the server validates each action, updates canonical state, and broadcasts a `ServerStateUpdate` to all connected clients. `createGame` registers a reconciliation handler on the transport that patches the local turn state and re-emits the `"turn"` event automatically. Single-player code paths are completely unaffected — zero overhead when no transport is provided.
+
+**Files:**
+- `transport/types.ts` — `ActionTransport` interface, `ServerStateUpdate`, `PlayerNetState`, `DungeonInitPayload`
+- `transport/websocket.ts` — `createWebSocketTransport(url)` browser-side factory
+- `api/createGame.ts` — `GameOptions.transport`, `PlayerOptions.id`, commit intercept, reconciliation wiring
+
+**Server:**
+- `src/server/index.js` — Express + `ws` authoritative server; generates the dungeon server-side from the host's config so the solid map and spawn position are authoritative; validates moves; broadcasts state to all room peers; serves the multiplayer example and static assets on a single port
+- `src/server/dungeon-entry.ts` — thin build entry that re-exports `generateBspDungeon` for the server build
+- `src/server/three-shim.js` — minimal `THREE.DataTexture` shim so `bsp.ts` runs in Node without a real GPU or browser context; only `image.data` is needed server-side
+- `vite.config.server.ts` — separate Vite config that compiles the server dungeon module with `three` aliased to the shim; outputs `dist/server/dungeon.js`
+
+**Example:**
+- `examples/multiplayer/` — mirrors the basic example but connects to the server first; host sends solid data after `generate()`; other players rendered as billboard entities via `"network-state"` events
+
+---
+
 ### Public API surface
 
 **Files:**
@@ -234,4 +257,4 @@ src/lib/
 - `api/player.ts` — player handle and action methods
 - `api/actions.ts` — action pipeline middleware
 - `api/keybindings.ts` — DOM keybinding attachment
-- `index.ts` — re-exports the public `CrawlLib` namespace: `createGame`, `attachMinimap`, `attachSpawner`, `attachDecorator`, `attachSurfacePainter`, `attachKeybindings`, `createNpc`, `createEnemy`, `createDecoration`, `createItem`, `buildTilesetMap`
+- `index.ts` — re-exports the public `CrawlLib` namespace: `createGame`, `attachMinimap`, `attachSpawner`, `attachDecorator`, `attachSurfacePainter`, `attachKeybindings`, `createNpc`, `createEnemy`, `createDecoration`, `createItem`, `buildTilesetMap`, `createWebSocketTransport`
