@@ -1,4 +1,4 @@
-import type { BspDungeonOptions, BspDungeonOutputs } from "./bsp";
+import { BspDungeonOptions, BspDungeonOutputs } from './bsp';
 /**
  * Plain, JSON-safe snapshot of a dungeon's mutable texture data.
  * Immutable generation inputs are stored so the dungeon can be fully

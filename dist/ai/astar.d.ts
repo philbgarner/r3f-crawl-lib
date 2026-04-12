@@ -1,4 +1,4 @@
-import type { DungeonOutputs } from "../dungeon/bsp";
+import { DungeonOutputs } from '../dungeon/bsp';
 export type GridPos = {
     x: number;
     y: number;

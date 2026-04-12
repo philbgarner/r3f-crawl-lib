@@ -1,6 +1,6 @@
+import { RpsEffect } from '../entities/effects';
 export type ActorId = string;
 export type ActorKind = "player" | "monster";
-import type { RpsEffect } from "../entities/effects";
 export type { RpsEffect };
 export type ActorBase = {
     id: ActorId;

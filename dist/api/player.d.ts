@@ -1,6 +1,6 @@
-import type { EntityBase } from "../entities/types";
-import type { TurnAction } from "../turn/types";
-import type { InventorySlot } from "../entities/inventory";
+import { EntityBase } from '../entities/types';
+import { TurnAction } from '../turn/types';
+import { InventorySlot } from '../entities/inventory';
 /** Mutable state bag that the player handle reads through. */
 export type PlayerState = {
     entity: EntityBase;

@@ -1,5 +1,5 @@
-import type { DungeonOutputs } from "./bsp";
-import type { ObjectPlacement } from "../entities/types";
+import { DungeonOutputs } from './bsp';
+import { ObjectPlacement } from '../entities/types';
 /** Maps DungeonOutputs channel names to the Tiled layer name to source them from. */
 export interface TiledLayerMap {
     solid?: string;

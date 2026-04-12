@@ -1,5 +1,5 @@
-import type { EntityBase } from "./types";
-import type { RpsEffect } from "./effects";
+import { EntityBase } from './types';
+import { RpsEffect } from './effects';
 type BaseOpts = {
     type: string;
     sprite: string | number;

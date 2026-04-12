@@ -58,7 +58,7 @@ export function createActionPipeline<
       let i = 0;
       const next = (): ActionMiddlewareResult<TState> => {
         if (i >= middlewares.length) return { pass: true };
-        return middlewares[i++](ctx, next);
+        return middlewares[i++]!(ctx, next);
       };
       return next();
     },

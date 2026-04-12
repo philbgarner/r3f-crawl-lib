@@ -150,7 +150,7 @@ export function tickUntilPlayer(
     if (Object.keys(monsterPatch).length > 0) {
       current = {
         ...current,
-        actors: { ...current.actors, [actorId]: { ...actor, ...monsterPatch } },
+        actors: { ...current.actors, [actorId]: { ...actor, ...monsterPatch } as MonsterActor },
       };
     }
 

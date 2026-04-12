@@ -1,5 +1,5 @@
+import { BspDungeonOutputs } from '../dungeon/bsp';
 import * as THREE from "three";
-import type { BspDungeonOutputs } from "../dungeon/bsp";
 export type TemperatureMask = {
     /** Per-cell temperature, 0 = cold, 255 = hot. Backed by `texture`. */
     data: Uint8Array;

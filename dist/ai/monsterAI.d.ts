@@ -1,7 +1,7 @@
-import type { GridPos } from "./astar";
-import type { DungeonOutputs } from "../dungeon/bsp";
-import type { ActorId } from "../turn/types";
-import type { TurnSystemState, DecideResult } from "../turn/system";
+import { GridPos } from './astar';
+import { DungeonOutputs } from '../dungeon/bsp';
+import { ActorId } from '../turn/types';
+import { TurnSystemState, DecideResult } from '../turn/system';
 export type MonsterAlertConfig = {
     detectionRadius: number;
     giveUpTurns: number;

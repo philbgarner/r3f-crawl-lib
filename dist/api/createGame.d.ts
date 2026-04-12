@@ -1,14 +1,13 @@
-import type { BspDungeonOptions, DungeonOutputs } from "../dungeon/bsp";
-import type { TiledMapOptions } from "../dungeon/tiled";
-import type { TurnAction } from "../turn/types";
-import type { EventEmitter } from "../events/eventEmitter";
-import type { FactionRegistry } from "../combat/factions";
-import type { DamageFormula } from "../combat/combat";
-import type { HiddenPassage } from "../entities/types";
-import type { EntityBase } from "../entities/types";
-import type { DecorationEntity } from "../entities/factory";
-import type { PlayerHandle } from "./player";
-import type { KeybindingsOptions } from "./keybindings";
+import { BspDungeonOptions, DungeonOutputs } from '../dungeon/bsp';
+import { TiledMapOptions } from '../dungeon/tiled';
+import { TurnAction } from '../turn/types';
+import { EventEmitter } from '../events/eventEmitter';
+import { FactionRegistry } from '../combat/factions';
+import { DamageFormula } from '../combat/combat';
+import { HiddenPassage, EntityBase } from '../entities/types';
+import { DecorationEntity } from '../entities/factory';
+import { PlayerHandle } from './player';
+import { KeybindingsOptions } from './keybindings';
 export type PublicRoom = {
     id: number;
     type: "room" | "corridor";

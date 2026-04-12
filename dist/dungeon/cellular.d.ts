@@ -1,5 +1,5 @@
+import { DungeonOutputs } from './bsp';
 import * as THREE from "three";
-import type { DungeonOutputs } from "./bsp";
 export type { DungeonOutputs };
 export type GridPos = {
     x: number;

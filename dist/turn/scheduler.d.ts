@@ -1,4 +1,4 @@
-import type { ActorId } from "./types";
+import { ActorId } from './types';
 export declare class TurnScheduler {
     private heap;
     private now;

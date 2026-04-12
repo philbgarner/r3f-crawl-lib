@@ -27,7 +27,7 @@ class MinHeap<T> {
 
   pop(): T | undefined {
     if (this._heap.length === 0) return undefined;
-    const top = this._heap[0].value;
+    const top = this._heap[0]!.value;
     const last = this._heap.pop()!;
     if (this._heap.length > 0) {
       this._heap[0] = last;
@@ -39,9 +39,9 @@ class MinHeap<T> {
   private _bubbleUp(i: number): void {
     while (i > 0) {
       const parent = (i - 1) >> 1;
-      if (this._heap[parent].priority <= this._heap[i].priority) break;
-      const tmp = this._heap[parent];
-      this._heap[parent] = this._heap[i];
+      if (this._heap[parent]!.priority <= this._heap[i]!.priority) break;
+      const tmp = this._heap[parent]!;
+      this._heap[parent] = this._heap[i]!;
       this._heap[i] = tmp;
       i = parent;
     }
@@ -53,11 +53,11 @@ class MinHeap<T> {
       let smallest = i;
       const l = 2 * i + 1;
       const r = 2 * i + 2;
-      if (l < n && this._heap[l].priority < this._heap[smallest].priority) smallest = l;
-      if (r < n && this._heap[r].priority < this._heap[smallest].priority) smallest = r;
+      if (l < n && this._heap[l]!.priority < this._heap[smallest]!.priority) smallest = l;
+      if (r < n && this._heap[r]!.priority < this._heap[smallest]!.priority) smallest = r;
       if (smallest === i) break;
-      const tmp = this._heap[smallest];
-      this._heap[smallest] = this._heap[i];
+      const tmp = this._heap[smallest]!;
+      this._heap[smallest] = this._heap[i]!;
       this._heap[i] = tmp;
       i = smallest;
     }
