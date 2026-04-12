@@ -70,7 +70,7 @@ src/lib/
 ### First-person 3D dungeon rendering with torch lighting and fog
 
 **Files:**
-- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms
+- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; supports per-cell floor/ceiling height offsets via `aHeightOffset` instance attribute in the vertex shader
 - `rendering/torchLighting.ts` — torch color, intensity, and banding constants; per-frame light computation
 - `rendering/camera.ts` — camera state, `tryMove` wall-collision logic, lerp movement, EotB-style movement as secondary export
 - `rendering/tileAtlas.ts` — UV coordinate helpers for sampling wall/floor/ceiling tiles from the atlas texture
@@ -78,10 +78,18 @@ src/lib/
 
 ---
 
+### Ceiling and floor height offsets
+
+**Files:**
+- `dungeon/bsp.ts` — generates `floorHeightOffset` and `ceilingHeightOffset` R8 DataTextures (128 = no offset, 0 = pit marker for floor); encoding described in `DungeonOutputs`
+- `rendering/dungeonRenderer.ts` — reads offset textures in `buildDungeon()`, populates `aHeightOffset` per-instance attribute; vertex shader applies the world-space Y offset; floor tiles with value 0 are omitted (pit)
+
+---
+
 ### BSP dungeon generator
 
 **Files:**
-- `dungeon/bsp.ts` — BSP tree split, room placement, corridor carving, `setupDungeon()`, `DungeonOutputs` shape
+- `dungeon/bsp.ts` — BSP tree split, room placement, corridor carving, `setupDungeon()`, `DungeonOutputs` shape; produces `floorHeightOffset` and `ceilingHeightOffset` textures defaulting to 128
 - `dungeon/cellular.ts` — cellular automata generator producing the same `DungeonOutputs` shape
 - `dungeon/serialize.ts` — serialize/deserialize a `DungeonOutputs` to JSON
 - `dungeon/themes.ts` — `ThemeDef` type, built-in themes (dungeon, crypt, catacomb, industrial, ruins), `registerTheme()`

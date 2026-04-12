@@ -670,9 +670,13 @@ function makeTurnsHandle(internal: GameInternal, dungeonHandle: DungeonHandle): 
         computeCost: (actorId, a) =>
           defaultComputeCost(actorId, a, internal.turnState!.actors),
         applyAction: makeApplyAction(internal, internal.options.combat),
-        onTimeAdvanced: ({ nextTime, prevTime }) => {
+        onTimeAdvanced: ({ nextTime, prevTime, state }) => {
           if (nextTime > prevTime) {
             internal.turnCounter += 1;
+            // Sync player position from the current turn state so that
+            // game.player.x/z are up-to-date when "turn" listeners fire.
+            const playerActor = state.actors[internal.playerActorId];
+            if (playerActor) syncEntityFromActor(internal.playerState.entity, playerActor);
             internal.events.emit("turn", { turn: internal.turnCounter });
             internal.options.turns?.onAdvance?.({
               turn: internal.turnCounter,

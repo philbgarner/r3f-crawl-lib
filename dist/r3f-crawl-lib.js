@@ -494,6 +494,10 @@ function generateBspDungeon(options) {
 	const wallOverlays = new Uint8Array(4 * W * H);
 	const ceilingType = new Uint8Array(W * H);
 	const ceilingOverlays = new Uint8Array(4 * W * H);
+	const floorHeightOffset = new Uint8Array(W * H);
+	floorHeightOffset.fill(128);
+	const ceilingHeightOffset = new Uint8Array(W * H);
+	ceilingHeightOffset.fill(128);
 	const { node: root } = buildBsp({
 		x: 0,
 		y: 0,
@@ -591,7 +595,9 @@ function generateBspDungeon(options) {
 			wallType: maskToDataTextureR8(wallType, W, H, "bsp_dungeon_wall_type"),
 			wallOverlays: maskToDataTextureRGBA(wallOverlays, W, H, "bsp_dungeon_wall_overlays"),
 			ceilingType: maskToDataTextureR8(ceilingType, W, H, "bsp_dungeon_ceiling_type"),
-			ceilingOverlays: maskToDataTextureRGBA(ceilingOverlays, W, H, "bsp_dungeon_ceiling_overlays")
+			ceilingOverlays: maskToDataTextureRGBA(ceilingOverlays, W, H, "bsp_dungeon_ceiling_overlays"),
+			floorHeightOffset: maskToDataTextureR8(floorHeightOffset, W, H, "bsp_dungeon_floor_height_offset"),
+			ceilingHeightOffset: maskToDataTextureR8(ceilingHeightOffset, W, H, "bsp_dungeon_ceiling_height_offset")
 		}
 	};
 }
@@ -2043,9 +2049,11 @@ function makeTurnsHandle(internal, dungeonHandle) {
 				monsterDecide: (state, monsterId) => decideChasePlayer(state, monsterId, dungOut, (x, y) => !isSolid(x, y, solid, width, height), (x, y) => isSolid(x, y, solid, width, height)),
 				computeCost: (actorId, a) => defaultComputeCost(actorId, a, internal.turnState.actors),
 				applyAction: makeApplyAction(internal, internal.options.combat),
-				onTimeAdvanced: ({ nextTime, prevTime }) => {
+				onTimeAdvanced: ({ nextTime, prevTime, state }) => {
 					if (nextTime > prevTime) {
 						internal.turnCounter += 1;
+						const playerActor = state.actors[internal.playerActorId];
+						if (playerActor) syncEntityFromActor(internal.playerState.entity, playerActor);
 						internal.events.emit("turn", { turn: internal.turnCounter });
 						internal.options.turns?.onAdvance?.({
 							turn: internal.turnCounter,
@@ -2671,6 +2679,7 @@ var FLICKER_RADIUS = .03;
 var BUMP_DEPTH = .3;
 var ATLAS_VERT = `
 attribute float aTileId;
+attribute float aHeightOffset; // world-space Y offset in units (positive = up)
 uniform vec2  uTileSize;
 uniform float uColumns;
 
@@ -2693,6 +2702,7 @@ void main() {
   vTileUv     = uv;
 
   vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  worldPos.y += aHeightOffset;
   vWorldPos    = worldPos.xz;
   vWorldPos3D  = worldPos.xyz;
   vFaceNormal  = normalize(mat3(modelMatrix * instanceMatrix) * vec3(0.0, 0.0, 1.0));
@@ -2758,7 +2768,7 @@ function makeFaceMatrix(x, y, z, rx, ry, rz, w, h) {
 * Build a PlaneGeometry with a pre-allocated aTileId InstancedBufferAttribute,
 * and an InstancedMesh using either a ShaderMaterial (atlas) or a plain material.
 */
-function buildInstancedMesh(matrices, tileIds, material, useAtlas) {
+function buildInstancedMesh(matrices, tileIds, material, useAtlas, heightOffsets) {
 	const geo = new THREE.PlaneGeometry(1, 1);
 	if (useAtlas) {
 		const tileIdArr = new Float32Array(matrices.length);
@@ -2766,6 +2776,8 @@ function buildInstancedMesh(matrices, tileIds, material, useAtlas) {
 			tileIdArr[i] = id;
 		});
 		geo.setAttribute("aTileId", new THREE.InstancedBufferAttribute(tileIdArr, 1));
+		const offsets = heightOffsets ?? new Float32Array(matrices.length);
+		geo.setAttribute("aHeightOffset", new THREE.InstancedBufferAttribute(offsets, 1));
 	}
 	const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
 	matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
@@ -2832,12 +2844,23 @@ function createDungeonRenderer(element, game, options = {}) {
 		atlasMaterials.push(mat);
 		return mat;
 	}
+	function makeAtlasMaterialDoubleSide(atlasConfig) {
+		const mat = makeAtlasMaterial(atlasConfig);
+		mat.side = THREE.DoubleSide;
+		return mat;
+	}
 	const floorMat = atlas ? makeAtlasMaterial(atlas) : new THREE.MeshStandardMaterial({ color: 5592422 });
 	const ceilMat = atlas ? makeAtlasMaterial(atlas) : new THREE.MeshStandardMaterial({ color: 2236979 });
 	const wallMat = atlas ? makeAtlasMaterial(atlas) : new THREE.MeshStandardMaterial({ color: 7037040 });
+	const ceilEdgeMat = atlas ? makeAtlasMaterialDoubleSide(atlas) : new THREE.MeshStandardMaterial({
+		color: 2236979,
+		side: THREE.DoubleSide
+	});
 	let floorMesh = null;
 	let ceilMesh = null;
 	let wallMesh = null;
+	let floorEdgeMesh = null;
+	let ceilEdgeMesh = null;
 	let dungeonBuilt = false;
 	function buildDungeon() {
 		if (dungeonBuilt) return;
@@ -2847,24 +2870,52 @@ function createDungeonRenderer(element, game, options = {}) {
 		const { width, height } = outputs;
 		const solid = outputs.textures.solid.image.data;
 		const wallMidY = ceilingH / 2;
+		const offsetStep = tileSize * .5;
+		const floorOffData = outputs.textures.floorHeightOffset?.image.data;
+		const ceilOffData = outputs.textures.ceilingHeightOffset?.image.data;
 		const floors = [];
 		const ceils = [];
 		const walls = [];
+		const floorEdges = [];
+		const ceilEdges = [];
 		const floorIds = [];
 		const ceilIds = [];
 		const wallIds = [];
+		const floorEdgeIds = [];
+		const ceilEdgeIds = [];
+		const floorOffsets = [];
+		const ceilOffsets = [];
 		function isSolid(cx, cz) {
 			if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
 			return (solid[cz * width + cx] ?? 0) > 0;
 		}
+		function openFloorVal(ncx, ncz) {
+			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+			if (isSolid(ncx, ncz)) return null;
+			const nidx = ncz * width + ncx;
+			return floorOffData ? floorOffData[nidx] ?? 128 : 128;
+		}
+		function openCeilVal(ncx, ncz) {
+			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+			if (isSolid(ncx, ncz)) return null;
+			const nidx = ncz * width + ncx;
+			return ceilOffData ? ceilOffData[nidx] ?? 128 : 128;
+		}
 		for (let cz = 0; cz < height; cz++) for (let cx = 0; cx < width; cx++) {
 			if (isSolid(cx, cz)) continue;
+			const idx = cz * width + cx;
 			const wx = (cx + .5) * tileSize;
 			const wz = (cz + .5) * tileSize;
-			floors.push(makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize));
-			floorIds.push(floorTileId);
+			const floorVal = floorOffData ? floorOffData[idx] ?? 128 : 128;
+			if (floorVal !== 0) {
+				floors.push(makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize));
+				floorIds.push(floorTileId);
+				floorOffsets.push((floorVal - 128) * offsetStep);
+			}
+			const ceilVal = ceilOffData ? ceilOffData[idx] ?? 128 : 128;
 			ceils.push(makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize));
 			ceilIds.push(ceilTileId);
+			ceilOffsets.push(-(ceilVal - 128) * offsetStep);
 			if (isSolid(cx, cz - 1)) {
 				walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
 				wallIds.push(wallTileId);
@@ -2881,13 +2932,55 @@ function createDungeonRenderer(element, game, options = {}) {
 				walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
 				wallIds.push(wallTileId);
 			}
+			if (floorVal !== 0) {
+				const feMidY = -tileSize / 2;
+				const nfN = openFloorVal(cx, cz - 1);
+				if (nfN !== null && nfN < floorVal) {
+					floorEdges.push(makeFaceMatrix(wx, feMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
+					floorEdgeIds.push(floorTileId);
+				}
+				const nfS = openFloorVal(cx, cz + 1);
+				if (nfS !== null && nfS < floorVal) {
+					floorEdges.push(makeFaceMatrix(wx, feMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
+					floorEdgeIds.push(floorTileId);
+				}
+				const nfW = openFloorVal(cx - 1, cz);
+				if (nfW !== null && nfW < floorVal) {
+					floorEdges.push(makeFaceMatrix(cx * tileSize, feMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
+					floorEdgeIds.push(floorTileId);
+				}
+				const nfE = openFloorVal(cx + 1, cz);
+				if (nfE !== null && nfE < floorVal) {
+					floorEdges.push(makeFaceMatrix((cx + 1) * tileSize, feMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
+					floorEdgeIds.push(floorTileId);
+				}
+			}
+			const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
+			function addCeilSkirt(ncVal, mx, mz, ry) {
+				const h = (ncVal - ceilVal) * offsetStep;
+				const midY = yCurrent - h / 2;
+				ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
+				ceilEdgeIds.push(ceilTileId);
+			}
+			const ncN = openCeilVal(cx, cz - 1);
+			if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx, cz * tileSize, Math.PI);
+			const ncS = openCeilVal(cx, cz + 1);
+			if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx, (cz + 1) * tileSize, 0);
+			const ncW = openCeilVal(cx - 1, cz);
+			if (ncW !== null && ncW > ceilVal) addCeilSkirt(ncW, cx * tileSize, wz, -HALF_PI);
+			const ncE = openCeilVal(cx + 1, cz);
+			if (ncE !== null && ncE > ceilVal) addCeilSkirt(ncE, (cx + 1) * tileSize, wz, HALF_PI);
 		}
-		floorMesh = buildInstancedMesh(floors, floorIds, floorMat, !!atlas);
+		floorMesh = buildInstancedMesh(floors, floorIds, floorMat, !!atlas, new Float32Array(floorOffsets));
 		scene.add(floorMesh);
-		ceilMesh = buildInstancedMesh(ceils, ceilIds, ceilMat, !!atlas);
+		ceilMesh = buildInstancedMesh(ceils, ceilIds, ceilMat, !!atlas, new Float32Array(ceilOffsets));
 		scene.add(ceilMesh);
 		wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas);
 		scene.add(wallMesh);
+		floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas);
+		scene.add(floorEdgeMesh);
+		ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas);
+		scene.add(ceilEdgeMesh);
 	}
 	const entityGeo = new THREE.BoxGeometry(tileSize * .35, ceilingH * .55, tileSize * .35);
 	const entityMat = new THREE.MeshStandardMaterial({ color: 13378082 });

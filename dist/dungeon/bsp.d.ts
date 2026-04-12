@@ -52,6 +52,22 @@ export type DungeonOutputs = {
          * IDs correspond to the `id` field in atlas.json `ceilingOverlays`. All zeros by default.
          */
         ceilingOverlays: THREE.DataTexture;
+        /**
+         * Per-cell floor height offset (R8). Encoding: 128 = no offset, 129 = +1 step up,
+         * 127 = -1 step down, 0 = pit (floor tile omitted entirely).
+         * One step = mapCellGeometrySize * offsetFactor (default: tileSize * 0.5).
+         * All floor cells default to 128. Wall cells are 128.
+         * Not present for cellular/tiled dungeon outputs.
+         */
+        floorHeightOffset?: THREE.DataTexture;
+        /**
+         * Per-cell ceiling height offset (R8). Encoding is inverted relative to floor:
+         * 128 = no offset, 127 = +1 step up (ceiling raised), 129 = +1 step down (ceiling lowered).
+         * One step = mapCellGeometrySize * offsetFactor (default: tileSize * 0.5).
+         * All floor cells default to 128. Wall cells are 128.
+         * Not present for cellular/tiled dungeon outputs.
+         */
+        ceilingHeightOffset?: THREE.DataTexture;
     };
 };
 export type RoomRect = {

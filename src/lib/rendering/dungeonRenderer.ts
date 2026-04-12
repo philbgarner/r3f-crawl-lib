@@ -174,6 +174,7 @@ const BUMP_DEPTH = 0.3;
 
 const ATLAS_VERT = /* glsl */ `
 attribute float aTileId;
+attribute float aHeightOffset; // world-space Y offset in units (positive = up)
 uniform vec2  uTileSize;
 uniform float uColumns;
 
@@ -196,6 +197,7 @@ void main() {
   vTileUv     = uv;
 
   vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  worldPos.y += aHeightOffset;
   vWorldPos    = worldPos.xz;
   vWorldPos3D  = worldPos.xyz;
   vFaceNormal  = normalize(mat3(modelMatrix * instanceMatrix) * vec3(0.0, 0.0, 1.0));
@@ -282,6 +284,7 @@ function buildInstancedMesh(
   tileIds: number[],
   material: THREE.Material,
   useAtlas: boolean,
+  heightOffsets?: Float32Array,
 ): THREE.InstancedMesh {
   const geo = new THREE.PlaneGeometry(1, 1);
 
@@ -289,6 +292,9 @@ function buildInstancedMesh(
     const tileIdArr = new Float32Array(matrices.length);
     tileIds.forEach((id, i) => { tileIdArr[i] = id; });
     geo.setAttribute('aTileId', new THREE.InstancedBufferAttribute(tileIdArr, 1));
+
+    const offsets = heightOffsets ?? new Float32Array(matrices.length);
+    geo.setAttribute('aHeightOffset', new THREE.InstancedBufferAttribute(offsets, 1));
   }
 
   const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
@@ -388,21 +394,32 @@ export function createDungeonRenderer(
     return mat;
   }
 
+  function makeAtlasMaterialDoubleSide(atlasConfig: TileAtlasConfig): THREE.ShaderMaterial {
+    const mat = makeAtlasMaterial(atlasConfig);
+    mat.side = THREE.DoubleSide;
+    return mat;
+  }
+
   // ── Plain (fallback) materials ────────────────────────────────────────────
-  const floorMat = atlas
+  const floorMat     = atlas
     ? makeAtlasMaterial(atlas)
     : new THREE.MeshStandardMaterial({ color: 0x555566 });
-  const ceilMat  = atlas
+  const ceilMat      = atlas
     ? makeAtlasMaterial(atlas)
     : new THREE.MeshStandardMaterial({ color: 0x222233 });
-  const wallMat  = atlas
+  const wallMat      = atlas
     ? makeAtlasMaterial(atlas)
     : new THREE.MeshStandardMaterial({ color: 0x6b6070 });
+  const ceilEdgeMat  = atlas
+    ? makeAtlasMaterialDoubleSide(atlas)
+    : new THREE.MeshStandardMaterial({ color: 0x222233, side: THREE.DoubleSide });
 
   // ── Dungeon geometry ──────────────────────────────────────────────────────
-  let floorMesh: THREE.InstancedMesh | null = null;
-  let ceilMesh:  THREE.InstancedMesh | null = null;
-  let wallMesh:  THREE.InstancedMesh | null = null;
+  let floorMesh:     THREE.InstancedMesh | null = null;
+  let ceilMesh:      THREE.InstancedMesh | null = null;
+  let wallMesh:      THREE.InstancedMesh | null = null;
+  let floorEdgeMesh: THREE.InstancedMesh | null = null;
+  let ceilEdgeMesh:  THREE.InstancedMesh | null = null;
   let dungeonBuilt = false;
 
   function buildDungeon() {
@@ -414,46 +431,113 @@ export function createDungeonRenderer(
     const { width, height } = outputs;
     const solid = outputs.textures.solid.image.data as Uint8Array;
     const wallMidY = ceilingH / 2;
+    const offsetFactor = 0.5;
+    const offsetStep = tileSize * offsetFactor;
 
-    const floors:    THREE.Matrix4[] = [];
-    const ceils:     THREE.Matrix4[] = [];
-    const walls:     THREE.Matrix4[] = [];
-    const floorIds:  number[]        = [];
-    const ceilIds:   number[]        = [];
-    const wallIds:   number[]        = [];
+    // Height offset texture data (value 128 = no offset; 0 = pit for floor).
+    const floorOffData  = outputs.textures.floorHeightOffset?.image.data  as Uint8Array | undefined;
+    const ceilOffData   = outputs.textures.ceilingHeightOffset?.image.data as Uint8Array | undefined;
+
+    const floors:        THREE.Matrix4[] = [];
+    const ceils:         THREE.Matrix4[] = [];
+    const walls:         THREE.Matrix4[] = [];
+    const floorEdges:    THREE.Matrix4[] = [];
+    const ceilEdges:     THREE.Matrix4[] = [];
+    const floorIds:      number[]        = [];
+    const ceilIds:       number[]        = [];
+    const wallIds:       number[]        = [];
+    const floorEdgeIds:  number[]        = [];
+    const ceilEdgeIds:   number[]        = [];
+    const floorOffsets:  number[]        = [];
+    const ceilOffsets:   number[]        = [];
 
     function isSolid(cx: number, cz: number) {
       if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
       return (solid[cz * width + cx] ?? 0) > 0;
     }
 
+    // Returns the raw offset value for an open cell, or null if solid/out-of-bounds.
+    function openFloorVal(ncx: number, ncz: number): number | null {
+      if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+      if (isSolid(ncx, ncz)) return null;
+      const nidx = ncz * width + ncx;
+      return floorOffData ? (floorOffData[nidx] ?? 128) : 128;
+    }
+    function openCeilVal(ncx: number, ncz: number): number | null {
+      if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+      if (isSolid(ncx, ncz)) return null;
+      const nidx = ncz * width + ncx;
+      return ceilOffData ? (ceilOffData[nidx] ?? 128) : 128;
+    }
+
     for (let cz = 0; cz < height; cz++) {
       for (let cx = 0; cx < width; cx++) {
         if (isSolid(cx, cz)) continue;
 
+        const idx = cz * width + cx;
         const wx = (cx + 0.5) * tileSize;
         const wz = (cz + 0.5) * tileSize;
 
-        floors.push(makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize));
-        floorIds.push(floorTileId);
+        // Floor — skip tile if floorHeightOffset === 0 (pit marker).
+        const floorVal = floorOffData ? (floorOffData[idx] ?? 128) : 128;
+        if (floorVal !== 0) {
+          floors.push(makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize));
+          floorIds.push(floorTileId);
+          floorOffsets.push((floorVal - 128) * offsetStep); // vertex shader applies this
+        }
+
+        // Ceiling — inverted: value < 128 raises ceiling, > 128 lowers it.
+        const ceilVal = ceilOffData ? (ceilOffData[idx] ?? 128) : 128;
         ceils.push(makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize));
         ceilIds.push(ceilTileId);
+        ceilOffsets.push(-(ceilVal - 128) * offsetStep); // vertex shader applies this (inverted)
 
         if (isSolid(cx, cz - 1)) { walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
         if (isSolid(cx, cz + 1)) { walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
         if (isSolid(cx - 1, cz)) { walls.push(makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
         if (isSolid(cx + 1, cz)) { walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
+
+        // Voxel-style floor edge skirts: side faces of the floor cube (top=y0, extends down).
+        // Only emit when the open neighbour has a different floor offset (Minecraft face-culling rule).
+        if (floorVal !== 0) {
+          const feMidY = -tileSize / 2;
+          // Outward-facing = opposite rotations to inward-facing walls.
+          const nfN = openFloorVal(cx, cz - 1); if (nfN !== null && nfN < floorVal) { floorEdges.push(makeFaceMatrix(wx,               feMidY, cz * tileSize,         0, Math.PI,    0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+          const nfS = openFloorVal(cx, cz + 1); if (nfS !== null && nfS < floorVal) { floorEdges.push(makeFaceMatrix(wx,               feMidY, (cz + 1) * tileSize,   0, 0,          0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+          const nfW = openFloorVal(cx - 1, cz); if (nfW !== null && nfW < floorVal) { floorEdges.push(makeFaceMatrix(cx * tileSize,     feMidY, wz,                    0, -HALF_PI,   0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+          const nfE = openFloorVal(cx + 1, cz); if (nfE !== null && nfE < floorVal) { floorEdges.push(makeFaceMatrix((cx+1) * tileSize, feMidY, wz,                    0, HALF_PI,    0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+        }
+
+        // Voxel-style ceiling edge skirts: height = exact difference between the two ceiling levels.
+        // Current cell's actual ceiling Y in world space:
+        const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
+        function addCeilSkirt(ncVal: number, mx: number, mz: number, ry: number) {
+          const h = (ncVal - ceilVal) * offsetStep; // height of the step
+          const midY = yCurrent - h / 2;            // centre between the two ceiling levels
+          ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
+          ceilEdgeIds.push(ceilTileId);
+        }
+        const ncN = openCeilVal(cx, cz - 1); if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx,               cz * tileSize,         Math.PI);
+        const ncS = openCeilVal(cx, cz + 1); if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx,               (cz + 1) * tileSize,   0);
+        const ncW = openCeilVal(cx - 1, cz); if (ncW !== null && ncW > ceilVal) addCeilSkirt(ncW, cx * tileSize,     wz,                    -HALF_PI);
+        const ncE = openCeilVal(cx + 1, cz); if (ncE !== null && ncE > ceilVal) addCeilSkirt(ncE, (cx+1) * tileSize, wz,                    HALF_PI);
       }
     }
 
-    floorMesh = buildInstancedMesh(floors, floorIds, floorMat, !!atlas);
+    floorMesh = buildInstancedMesh(floors, floorIds, floorMat, !!atlas, new Float32Array(floorOffsets));
     scene.add(floorMesh);
 
-    ceilMesh = buildInstancedMesh(ceils, ceilIds, ceilMat, !!atlas);
+    ceilMesh = buildInstancedMesh(ceils, ceilIds, ceilMat, !!atlas, new Float32Array(ceilOffsets));
     scene.add(ceilMesh);
 
     wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas);
     scene.add(wallMesh);
+
+    floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas);
+    scene.add(floorEdgeMesh);
+
+    ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas);
+    scene.add(ceilEdgeMesh);
   }
 
   // ── Entity rendering ──────────────────────────────────────────────────────

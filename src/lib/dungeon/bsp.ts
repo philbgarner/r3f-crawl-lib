@@ -50,6 +50,22 @@ export type DungeonOutputs = {
      * IDs correspond to the `id` field in atlas.json `ceilingOverlays`. All zeros by default.
      */
     ceilingOverlays: THREE.DataTexture;
+    /**
+     * Per-cell floor height offset (R8). Encoding: 128 = no offset, 129 = +1 step up,
+     * 127 = -1 step down, 0 = pit (floor tile omitted entirely).
+     * One step = mapCellGeometrySize * offsetFactor (default: tileSize * 0.5).
+     * All floor cells default to 128. Wall cells are 128.
+     * Not present for cellular/tiled dungeon outputs.
+     */
+    floorHeightOffset?: THREE.DataTexture;
+    /**
+     * Per-cell ceiling height offset (R8). Encoding is inverted relative to floor:
+     * 128 = no offset, 127 = +1 step up (ceiling raised), 129 = +1 step down (ceiling lowered).
+     * One step = mapCellGeometrySize * offsetFactor (default: tileSize * 0.5).
+     * All floor cells default to 128. Wall cells are 128.
+     * Not present for cellular/tiled dungeon outputs.
+     */
+    ceilingHeightOffset?: THREE.DataTexture;
   };
 };
 
@@ -859,6 +875,10 @@ export function generateBspDungeon(
   const wallOverlays = new Uint8Array(4 * W * H);
   const ceilingType = new Uint8Array(W * H);
   const ceilingOverlays = new Uint8Array(4 * W * H);
+  const floorHeightOffset = new Uint8Array(W * H);
+  floorHeightOffset.fill(128);
+  const ceilingHeightOffset = new Uint8Array(W * H);
+  ceilingHeightOffset.fill(128);
 
   const { node: root } = buildBsp(
     { x: 0, y: 0, w: W, h: H },
@@ -1006,6 +1026,8 @@ export function generateBspDungeon(
       wallOverlays: maskToDataTextureRGBA(wallOverlays, W, H, "bsp_dungeon_wall_overlays"),
       ceilingType: maskToDataTextureR8(ceilingType, W, H, "bsp_dungeon_ceiling_type"),
       ceilingOverlays: maskToDataTextureRGBA(ceilingOverlays, W, H, "bsp_dungeon_ceiling_overlays"),
+      floorHeightOffset: maskToDataTextureR8(floorHeightOffset, W, H, "bsp_dungeon_floor_height_offset"),
+      ceilingHeightOffset: maskToDataTextureR8(ceilingHeightOffset, W, H, "bsp_dungeon_ceiling_height_offset"),
     },
   };
 }
