@@ -71,7 +71,7 @@ src/lib/
 ### First-person 3D dungeon rendering with lighting and fog
 
 **Files:**
-- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; supports per-cell floor/ceiling height offsets via `aHeightOffset`, per-instance UV rotation via `aUvRotation`, and UV height scaling via `aUvHeightScale`; per-direction tile specs via `wallTiles`, `floorSkirtTiles`, `ceilSkirtTiles` options; uses `basicLighting.ts` shaders
+- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; supports per-cell floor/ceiling height offsets via `aHeightOffset`, per-instance UV rotation via `aUvRotation`, and UV height scaling via `aUvHeightScale`; per-direction tile specs via `wallTiles`, `floorSkirtTiles`, `ceilSkirtTiles` options; public `addLayer(spec)` API for stacking additional instanced meshes on floors, ceilings, walls, or skirts with per-face filtering and deferred application; uses `basicLighting.ts` shaders; exports `LayerTarget`, `LayerFaceResult`, `LayerSpec`, `LayerHandle`
 - `rendering/basicLighting.ts` — minimal atlas and object shaders: texture sampling + linear fog; `aUvRotation` rotates UVs in 90° steps (0–3); `aUvHeightScale` clips UVs to the top fraction of a tile (top-aligned) so partial-height skirt panels keep brick aspect ratio; no torch flicker or tint bands; used by `dungeonRenderer.ts`
 - `rendering/torchLighting.ts` — torch color, intensity, banding constants, and flickering GLSL chunks; available for custom renderers that want animated torch lighting
 - `rendering/camera.ts` — camera state, `tryMove` wall-collision logic, lerp movement, EotB-style movement as secondary export

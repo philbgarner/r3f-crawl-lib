@@ -100,12 +100,77 @@ export type DungeonRendererOptions = {
   ceilSkirtTiles?: DirectionFaceMap;
 };
 
+// ---------------------------------------------------------------------------
+// Layer API types
+// ---------------------------------------------------------------------------
+
+/** Which class of dungeon geometry a layer targets. */
+export type LayerTarget = 'floor' | 'ceil' | 'wall' | 'floorSkirt' | 'ceilSkirt';
+
+/**
+ * Return value from a `LayerSpec.filter` callback.
+ * Return an object (optionally overriding `tileId`/`rotation`) to include the
+ * face, or a falsy value to exclude it.
+ */
+export type LayerFaceResult =
+  | { tileId?: number; rotation?: number }
+  | null | false | undefined;
+
+export type LayerSpec = {
+  /** Which geometry class to add the layer on top of. */
+  target: LayerTarget;
+  /** Three.js material for this layer's instanced mesh. */
+  material: THREE.Material;
+  /**
+   * Called for each candidate face.  Return an object to include the face
+   * (optionally overriding `tileId` and `rotation`), or a falsy value to skip.
+   * `direction` is provided for 'wall', 'floorSkirt', and 'ceilSkirt' targets.
+   * Default: include every face with tileId 0, rotation 0.
+   */
+  filter?: (
+    cx: number,
+    cz: number,
+    direction?: 'north' | 'south' | 'east' | 'west',
+  ) => LayerFaceResult;
+  /**
+   * Whether to attach atlas shader attributes (aTileId, aUvRotation, etc.)
+   * to the instanced geometry.  Defaults to `true` when an atlas was passed
+   * to `createDungeonRenderer`, `false` otherwise.
+   */
+  useAtlas?: boolean;
+  /**
+   * Enable `THREE.Material.polygonOffset` on the layer material so it
+   * renders on top of the base geometry without z-fighting.  Default: `true`.
+   */
+  polygonOffset?: boolean;
+};
+
+export type LayerHandle = {
+  /** Remove this layer from the scene and release its geometry. */
+  remove(): void;
+};
+
 export type DungeonRenderer = {
   /**
    * Update the renderer's entity list. Call this on every 'turn' event
    * (or whenever entity positions change) to keep the scene in sync.
    */
   setEntities(entities: EntityBase[]): void;
+  /**
+   * Add an instanced geometry layer on top of existing walls, ceilings, or
+   * floors.  May be called before or after the dungeon is generated; layers
+   * added before generation are deferred and applied automatically.
+   *
+   * Returns a handle whose `remove()` method tears the layer down.
+   */
+  addLayer(spec: LayerSpec): LayerHandle;
+  /**
+   * Create a new atlas `ShaderMaterial` using the same texture, fog, and
+   * shader settings as the renderer's own geometry.  Useful when building a
+   * layer material that should display tiles from the configured atlas.
+   * Returns `null` when no atlas was passed to `createDungeonRenderer`.
+   */
+  createAtlasMaterial(): THREE.ShaderMaterial | null;
   /** Unmount the canvas and release all Three.js resources. */
   destroy(): void;
 };
@@ -277,6 +342,134 @@ export function createDungeonRenderer(
   let ceilEdgeMesh:  THREE.InstancedMesh | null = null;
   let dungeonBuilt = false;
 
+  // ── Layer state ───────────────────────────────────────────────────────────
+  type LayerEntry = { spec: LayerSpec; holder: { mesh: THREE.InstancedMesh | null } };
+  const layerEntries: LayerEntry[] = [];
+
+  /** Build an instanced mesh for a single LayerSpec by scanning the dungeon map. */
+  function buildLayerMesh(spec: LayerSpec): THREE.InstancedMesh | null {
+    const outputs = game.dungeon.outputs;
+    if (!outputs) return null;
+
+    const { width, height } = outputs;
+    const solid        = outputs.textures.solid.image.data as Uint8Array;
+    const floorOffData = outputs.textures.floorHeightOffset?.image.data  as Uint8Array | undefined;
+    const ceilOffData  = outputs.textures.ceilingHeightOffset?.image.data as Uint8Array | undefined;
+    const wallMidY     = ceilingH / 2;
+    const offsetStep   = tileSize * 0.5;
+
+    const matrices:     THREE.Matrix4[] = [];
+    const tileIds:      number[]        = [];
+    const rotations:    number[]        = [];
+    const offsets:      number[]        = [];
+    const heightScales: number[]        = [];
+
+    const filter = spec.filter ?? (() => ({ tileId: 0 }));
+
+    function isSolid(cx: number, cz: number) {
+      if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
+      return (solid[cz * width + cx] ?? 0) > 0;
+    }
+    function openFloorVal(ncx: number, ncz: number): number | null {
+      if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+      if (isSolid(ncx, ncz)) return null;
+      return floorOffData ? (floorOffData[ncz * width + ncx] ?? 128) : 128;
+    }
+    function openCeilVal(ncx: number, ncz: number): number | null {
+      if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+      if (isSolid(ncx, ncz)) return null;
+      return ceilOffData ? (ceilOffData[ncz * width + ncx] ?? 128) : 128;
+    }
+
+    function tryAdd(
+      result: LayerFaceResult,
+      matrix: THREE.Matrix4,
+      offset = 0,
+      hs = 1.0,
+    ) {
+      if (!result) return;
+      matrices.push(matrix);
+      tileIds.push(result.tileId ?? 0);
+      rotations.push(result.rotation ?? 0);
+      offsets.push(offset);
+      heightScales.push(hs);
+    }
+
+    for (let cz = 0; cz < height; cz++) {
+      for (let cx = 0; cx < width; cx++) {
+        if (isSolid(cx, cz)) continue;
+
+        const idx      = cz * width + cx;
+        const wx       = (cx + 0.5) * tileSize;
+        const wz       = (cz + 0.5) * tileSize;
+        const floorVal = floorOffData ? (floorOffData[idx] ?? 128) : 128;
+        const ceilVal  = ceilOffData  ? (ceilOffData[idx]  ?? 128) : 128;
+
+        if (spec.target === 'floor' && floorVal !== 0) {
+          tryAdd(
+            filter(cx, cz, undefined),
+            makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize),
+            (floorVal - 128) * offsetStep,
+          );
+        }
+
+        if (spec.target === 'ceil') {
+          tryAdd(
+            filter(cx, cz, undefined),
+            makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize),
+            -(ceilVal - 128) * offsetStep,
+          );
+        }
+
+        if (spec.target === 'wall') {
+          if (isSolid(cx, cz - 1)) tryAdd(filter(cx, cz, 'north'), makeFaceMatrix(wx,               wallMidY, cz * tileSize,         0, 0,         0, tileSize, ceilingH));
+          if (isSolid(cx, cz + 1)) tryAdd(filter(cx, cz, 'south'), makeFaceMatrix(wx,               wallMidY, (cz + 1) * tileSize,   0, Math.PI,   0, tileSize, ceilingH));
+          if (isSolid(cx - 1, cz)) tryAdd(filter(cx, cz, 'west'),  makeFaceMatrix(cx * tileSize,     wallMidY, wz,                    0, HALF_PI,   0, tileSize, ceilingH));
+          if (isSolid(cx + 1, cz)) tryAdd(filter(cx, cz, 'east'),  makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz,                  0, -HALF_PI,  0, tileSize, ceilingH));
+        }
+
+        if (spec.target === 'floorSkirt' && floorVal !== 0) {
+          const feMidY = -tileSize / 2;
+          const nfN = openFloorVal(cx, cz - 1); if (nfN !== null && nfN < floorVal) tryAdd(filter(cx, cz, 'north'), makeFaceMatrix(wx,               feMidY, cz * tileSize,         0, Math.PI,   0, tileSize, tileSize));
+          const nfS = openFloorVal(cx, cz + 1); if (nfS !== null && nfS < floorVal) tryAdd(filter(cx, cz, 'south'), makeFaceMatrix(wx,               feMidY, (cz + 1) * tileSize,   0, 0,         0, tileSize, tileSize));
+          const nfW = openFloorVal(cx - 1, cz); if (nfW !== null && nfW < floorVal) tryAdd(filter(cx, cz, 'west'),  makeFaceMatrix(cx * tileSize,     feMidY, wz,                    0, -HALF_PI,  0, tileSize, tileSize));
+          const nfE = openFloorVal(cx + 1, cz); if (nfE !== null && nfE < floorVal) tryAdd(filter(cx, cz, 'east'),  makeFaceMatrix((cx + 1) * tileSize, feMidY, wz,                  0, HALF_PI,   0, tileSize, tileSize));
+        }
+
+        if (spec.target === 'ceilSkirt') {
+          const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
+          const addCS = (ncVal: number | null, mx: number, mz: number, ry: number, dir: 'north' | 'south' | 'east' | 'west') => {
+            if (ncVal === null || ncVal <= ceilVal) return;
+            const h    = (ncVal - ceilVal) * offsetStep;
+            const midY = yCurrent - h / 2;
+            tryAdd(filter(cx, cz, dir), makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h), 0, h / tileSize);
+          };
+          addCS(openCeilVal(cx, cz - 1), wx,               cz * tileSize,         Math.PI,  'north');
+          addCS(openCeilVal(cx, cz + 1), wx,               (cz + 1) * tileSize,   0,         'south');
+          addCS(openCeilVal(cx - 1, cz), cx * tileSize,     wz,                    -HALF_PI,  'west');
+          addCS(openCeilVal(cx + 1, cz), (cx + 1) * tileSize, wz,                  HALF_PI,   'east');
+        }
+      }
+    }
+
+    if (matrices.length === 0) return null;
+
+    const useAtlas = spec.useAtlas ?? !!atlas;
+    const mesh = buildInstancedMesh(
+      matrices, tileIds, spec.material, useAtlas,
+      new Float32Array(offsets), rotations,
+      spec.target === 'ceilSkirt' ? heightScales : undefined,
+    );
+
+    if (spec.polygonOffset !== false) {
+      spec.material.polygonOffset      = true;
+      spec.material.polygonOffsetFactor = -1;
+      spec.material.polygonOffsetUnits  = -1;
+    }
+    mesh.renderOrder = 1;
+    return mesh;
+  }
+
   function buildDungeon() {
     if (dungeonBuilt) return;
     const outputs = game.dungeon.outputs;
@@ -407,6 +600,14 @@ export function createDungeonRenderer(
 
     ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, undefined, ceilEdgeRots, ceilEdgeHeightScales);
     scene.add(ceilEdgeMesh);
+
+    // Apply any layers registered before the dungeon was generated.
+    for (const entry of layerEntries) {
+      if (!entry.holder.mesh) {
+        entry.holder.mesh = buildLayerMesh(entry.spec);
+        if (entry.holder.mesh) scene.add(entry.holder.mesh);
+      }
+    }
   }
 
   // ── Entity rendering ──────────────────────────────────────────────────────
@@ -506,6 +707,29 @@ export function createDungeonRenderer(
   return {
     setEntities(entities) {
       syncEntities(entities);
+    },
+    createAtlasMaterial() {
+      return atlas ? makeAtlasMaterial(atlas) : null;
+    },
+    addLayer(spec: LayerSpec): LayerHandle {
+      const holder: { mesh: THREE.InstancedMesh | null } = { mesh: null };
+      if (dungeonBuilt) {
+        holder.mesh = buildLayerMesh(spec);
+        if (holder.mesh) scene.add(holder.mesh);
+      }
+      const entry: LayerEntry = { spec, holder };
+      layerEntries.push(entry);
+      return {
+        remove() {
+          if (holder.mesh) {
+            scene.remove(holder.mesh);
+            holder.mesh.geometry.dispose();
+            holder.mesh = null;
+          }
+          const i = layerEntries.indexOf(entry);
+          if (i !== -1) layerEntries.splice(i, 1);
+        },
+      };
     },
     destroy() {
       cancelAnimationFrame(rafId);

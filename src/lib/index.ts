@@ -16,7 +16,7 @@ export { createItem }                                from './entities/inventory'
 export { loadTiledMap }                              from './dungeon/tiled'
 
 export { createDungeonRenderer } from './rendering/dungeonRenderer'
-export type { DungeonRendererOptions, DungeonRenderer, FaceTileSpec, DirectionFaceMap } from './rendering/dungeonRenderer'
+export type { DungeonRendererOptions, DungeonRenderer, FaceTileSpec, DirectionFaceMap, LayerTarget, LayerFaceResult, LayerSpec, LayerHandle } from './rendering/dungeonRenderer'
 
 // Transport
 export { createWebSocketTransport }                  from './transport/websocket'

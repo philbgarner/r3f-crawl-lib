@@ -111,9 +111,9 @@ atlasImg.onload = () => {
       sheetHeight: 1024,
       columns: 8,
     },
-    floorTileId: 20, // Flagstone   uv [256, 128]
-    ceilTileId: 19, // Cobblestone uv [192, 128]
-    wallTileId: 16, // Brick       uv [0,   128]
+    floorTileId: 20, // Flagstone    uv [256, 128]
+    ceilTileId: 19, // Cobblestone  uv [192, 128]
+    wallTileId: 31, // Corridor base; room walls use tile 16 via a layer (see below).
     ceilSkirtTiles: {
       north: { tileId: 19, rotation: 0 },
       south: { tileId: 19, rotation: 0 },
@@ -121,6 +121,72 @@ atlasImg.onload = () => {
       west: { tileId: 19, rotation: 3 },
     },
   });
+
+  // ── Layers ────────────────────────────────────────────────────────────────
+  //
+  // textures.regionId: 0 = corridor cell, >0 = room cell.
+  //
+  // Base wallTileId (31) covers all walls.  Three layers refine this:
+  //   1. Room walls → tile 16 (Brick), replacing the corridor base for rooms.
+  //   2. Room walls, odd coords → tile 18 overlay.
+  //   3. Corridor walls, odd coords → tile 43 overlay.
+  //
+  // For N/S walls the face runs along X, so oddness is checked on cx.
+  // For E/W walls the face runs along Z, so oddness is checked on cz.
+  //
+  // createAtlasMaterial() returns a new ShaderMaterial wired to the same
+  // atlas texture, fog settings, and shaders the renderer uses internally.
+
+  function isRoom(cx, cz) {
+    const outputs = game.dungeon.outputs;
+    if (!outputs) return false;
+    const { width, textures } = outputs;
+    const regionId = textures.regionId.image.data;
+    return regionId[cz * width + cx] !== 0;
+  }
+
+  function isOdd(cx, cz, direction) {
+    return direction === "north" || direction === "south"
+      ? cx % 2 !== 0
+      : cz % 2 !== 0;
+  }
+
+  // Layer 1 — room base: tile 16 (Brick) over all room wall faces.
+  renderer.addLayer({
+    target: "wall",
+    material: renderer.createAtlasMaterial(),
+    filter: (cx, cz) => (isRoom(cx, cz) ? { tileId: 16 } : null),
+  });
+
+  // Layer 2 — room overlay: tile 18 on odd-coordinate room wall faces.
+  renderer.addLayer({
+    target: "wall",
+    material: renderer.createAtlasMaterial(),
+    filter: (cx, cz, direction) =>
+      isRoom(cx, cz) && isOdd(cx, cz, direction) ? { tileId: 18 } : null,
+  });
+
+  // Layer 3 — corridor overlay: tile 43 on odd-coordinate corridor wall faces.
+  renderer.addLayer({
+    target: "wall",
+    material: renderer.createAtlasMaterial(),
+    filter: (cx, cz, direction) => (!isRoom(cx, cz) ? { tileId: 43 } : null),
+  });
+
+  // Layer 4 — corridor ceiling: tile 20.
+  renderer.addLayer({
+    target: "ceil",
+    material: renderer.createAtlasMaterial(),
+    filter: (cx, cz) => (!isRoom(cx, cz) ? { tileId: 22 } : null),
+  });
+
+  // Layer 5 — corridor floor: tile 6.
+  renderer.addLayer({
+    target: "floor",
+    material: renderer.createAtlasMaterial(),
+    filter: (cx, cz) => (!isRoom(cx, cz) ? { tileId: 6 } : null),
+  });
+
   game.generate();
 };
 atlasImg.src = "/examples/basic/atlas.png";

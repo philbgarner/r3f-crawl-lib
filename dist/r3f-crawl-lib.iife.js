@@ -2844,6 +2844,96 @@ void main() {
 		let floorEdgeMesh = null;
 		let ceilEdgeMesh = null;
 		let dungeonBuilt = false;
+		const layerEntries = [];
+		/** Build an instanced mesh for a single LayerSpec by scanning the dungeon map. */
+		function buildLayerMesh(spec) {
+			const outputs = game.dungeon.outputs;
+			if (!outputs) return null;
+			const { width, height } = outputs;
+			const solid = outputs.textures.solid.image.data;
+			const floorOffData = outputs.textures.floorHeightOffset?.image.data;
+			const ceilOffData = outputs.textures.ceilingHeightOffset?.image.data;
+			const wallMidY = ceilingH / 2;
+			const offsetStep = tileSize * .5;
+			const matrices = [];
+			const tileIds = [];
+			const rotations = [];
+			const offsets = [];
+			const heightScales = [];
+			const filter = spec.filter ?? (() => ({ tileId: 0 }));
+			function isSolid(cx, cz) {
+				if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
+				return (solid[cz * width + cx] ?? 0) > 0;
+			}
+			function openFloorVal(ncx, ncz) {
+				if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+				if (isSolid(ncx, ncz)) return null;
+				return floorOffData ? floorOffData[ncz * width + ncx] ?? 128 : 128;
+			}
+			function openCeilVal(ncx, ncz) {
+				if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+				if (isSolid(ncx, ncz)) return null;
+				return ceilOffData ? ceilOffData[ncz * width + ncx] ?? 128 : 128;
+			}
+			function tryAdd(result, matrix, offset = 0, hs = 1) {
+				if (!result) return;
+				matrices.push(matrix);
+				tileIds.push(result.tileId ?? 0);
+				rotations.push(result.rotation ?? 0);
+				offsets.push(offset);
+				heightScales.push(hs);
+			}
+			for (let cz = 0; cz < height; cz++) for (let cx = 0; cx < width; cx++) {
+				if (isSolid(cx, cz)) continue;
+				const idx = cz * width + cx;
+				const wx = (cx + .5) * tileSize;
+				const wz = (cz + .5) * tileSize;
+				const floorVal = floorOffData ? floorOffData[idx] ?? 128 : 128;
+				const ceilVal = ceilOffData ? ceilOffData[idx] ?? 128 : 128;
+				if (spec.target === "floor" && floorVal !== 0) tryAdd(filter(cx, cz, void 0), makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize), (floorVal - 128) * offsetStep);
+				if (spec.target === "ceil") tryAdd(filter(cx, cz, void 0), makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize), -(ceilVal - 128) * offsetStep);
+				if (spec.target === "wall") {
+					if (isSolid(cx, cz - 1)) tryAdd(filter(cx, cz, "north"), makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
+					if (isSolid(cx, cz + 1)) tryAdd(filter(cx, cz, "south"), makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH));
+					if (isSolid(cx - 1, cz)) tryAdd(filter(cx, cz, "west"), makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH));
+					if (isSolid(cx + 1, cz)) tryAdd(filter(cx, cz, "east"), makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
+				}
+				if (spec.target === "floorSkirt" && floorVal !== 0) {
+					const feMidY = -tileSize / 2;
+					const nfN = openFloorVal(cx, cz - 1);
+					if (nfN !== null && nfN < floorVal) tryAdd(filter(cx, cz, "north"), makeFaceMatrix(wx, feMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
+					const nfS = openFloorVal(cx, cz + 1);
+					if (nfS !== null && nfS < floorVal) tryAdd(filter(cx, cz, "south"), makeFaceMatrix(wx, feMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
+					const nfW = openFloorVal(cx - 1, cz);
+					if (nfW !== null && nfW < floorVal) tryAdd(filter(cx, cz, "west"), makeFaceMatrix(cx * tileSize, feMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
+					const nfE = openFloorVal(cx + 1, cz);
+					if (nfE !== null && nfE < floorVal) tryAdd(filter(cx, cz, "east"), makeFaceMatrix((cx + 1) * tileSize, feMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
+				}
+				if (spec.target === "ceilSkirt") {
+					const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
+					const addCS = (ncVal, mx, mz, ry, dir) => {
+						if (ncVal === null || ncVal <= ceilVal) return;
+						const h = (ncVal - ceilVal) * offsetStep;
+						const midY = yCurrent - h / 2;
+						tryAdd(filter(cx, cz, dir), makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h), 0, h / tileSize);
+					};
+					addCS(openCeilVal(cx, cz - 1), wx, cz * tileSize, Math.PI, "north");
+					addCS(openCeilVal(cx, cz + 1), wx, (cz + 1) * tileSize, 0, "south");
+					addCS(openCeilVal(cx - 1, cz), cx * tileSize, wz, -HALF_PI, "west");
+					addCS(openCeilVal(cx + 1, cz), (cx + 1) * tileSize, wz, HALF_PI, "east");
+				}
+			}
+			if (matrices.length === 0) return null;
+			const useAtlas = spec.useAtlas ?? !!atlas;
+			const mesh = buildInstancedMesh(matrices, tileIds, spec.material, useAtlas, new Float32Array(offsets), rotations, spec.target === "ceilSkirt" ? heightScales : void 0);
+			if (spec.polygonOffset !== false) {
+				spec.material.polygonOffset = true;
+				spec.material.polygonOffsetFactor = -1;
+				spec.material.polygonOffsetUnits = -1;
+			}
+			mesh.renderOrder = 1;
+			return mesh;
+		}
 		function buildDungeon() {
 			if (dungeonBuilt) return;
 			const outputs = game.dungeon.outputs;
@@ -2992,6 +3082,10 @@ void main() {
 			scene.add(floorEdgeMesh);
 			ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, void 0, ceilEdgeRots, ceilEdgeHeightScales);
 			scene.add(ceilEdgeMesh);
+			for (const entry of layerEntries) if (!entry.holder.mesh) {
+				entry.holder.mesh = buildLayerMesh(entry.spec);
+				if (entry.holder.mesh) scene.add(entry.holder.mesh);
+			}
 		}
 		const entityGeo = new three.BoxGeometry(tileSize * .35, ceilingH * .55, tileSize * .35);
 		const entityMat = new three.MeshStandardMaterial({ color: 13378082 });
@@ -3061,6 +3155,30 @@ void main() {
 		return {
 			setEntities(entities) {
 				syncEntities(entities);
+			},
+			createAtlasMaterial() {
+				return atlas ? makeAtlasMaterial(atlas) : null;
+			},
+			addLayer(spec) {
+				const holder = { mesh: null };
+				if (dungeonBuilt) {
+					holder.mesh = buildLayerMesh(spec);
+					if (holder.mesh) scene.add(holder.mesh);
+				}
+				const entry = {
+					spec,
+					holder
+				};
+				layerEntries.push(entry);
+				return { remove() {
+					if (holder.mesh) {
+						scene.remove(holder.mesh);
+						holder.mesh.geometry.dispose();
+						holder.mesh = null;
+					}
+					const i = layerEntries.indexOf(entry);
+					if (i !== -1) layerEntries.splice(i, 1);
+				} };
 			},
 			destroy() {
 				cancelAnimationFrame(rafId);

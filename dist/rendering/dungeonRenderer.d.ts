@@ -1,6 +1,33 @@
 import { GameHandle } from '../api/createGame';
 import { EntityBase } from '../entities/types';
 import { DirectionFaceMap } from './tileAtlas';
+/**
+ * dungeonRenderer.ts
+ *
+ * Plain Three.js first-person dungeon renderer — no React or R3F required.
+ * Designed for script-tag usage: create it after `game.generate()` is wired
+ * up, and it will visualise the dungeon and player/entity positions.
+ *
+ * Usage (plain colours):
+ *   const renderer = createDungeonRenderer(document.getElementById('viewport'), game);
+ *
+ * Usage (tile atlas):
+ *   const renderer = createDungeonRenderer(el, game, {
+ *     atlas: {
+ *       texture,
+ *       tileWidth: 16, tileHeight: 16,
+ *       sheetWidth: 256, sheetHeight: 256,
+ *       columns: 16,
+ *     },
+ *     floorTileId: 0,
+ *     ceilTileId: 1,
+ *     wallTileId: 2,
+ *   });
+ *
+ *   // Pass live entity list on every turn:
+ *   game.events.on('turn', () => renderer.setEntities(enemies));
+ */
+import * as THREE from 'three';
 export type { FaceTileSpec, DirectionFaceMap } from './tileAtlas';
 /** Describes a sprite-sheet atlas used for tile texturing. */
 export type TileAtlasConfig = {
@@ -64,12 +91,66 @@ export type DungeonRendererOptions = {
      */
     ceilSkirtTiles?: DirectionFaceMap;
 };
+/** Which class of dungeon geometry a layer targets. */
+export type LayerTarget = 'floor' | 'ceil' | 'wall' | 'floorSkirt' | 'ceilSkirt';
+/**
+ * Return value from a `LayerSpec.filter` callback.
+ * Return an object (optionally overriding `tileId`/`rotation`) to include the
+ * face, or a falsy value to exclude it.
+ */
+export type LayerFaceResult = {
+    tileId?: number;
+    rotation?: number;
+} | null | false | undefined;
+export type LayerSpec = {
+    /** Which geometry class to add the layer on top of. */
+    target: LayerTarget;
+    /** Three.js material for this layer's instanced mesh. */
+    material: THREE.Material;
+    /**
+     * Called for each candidate face.  Return an object to include the face
+     * (optionally overriding `tileId` and `rotation`), or a falsy value to skip.
+     * `direction` is provided for 'wall', 'floorSkirt', and 'ceilSkirt' targets.
+     * Default: include every face with tileId 0, rotation 0.
+     */
+    filter?: (cx: number, cz: number, direction?: 'north' | 'south' | 'east' | 'west') => LayerFaceResult;
+    /**
+     * Whether to attach atlas shader attributes (aTileId, aUvRotation, etc.)
+     * to the instanced geometry.  Defaults to `true` when an atlas was passed
+     * to `createDungeonRenderer`, `false` otherwise.
+     */
+    useAtlas?: boolean;
+    /**
+     * Enable `THREE.Material.polygonOffset` on the layer material so it
+     * renders on top of the base geometry without z-fighting.  Default: `true`.
+     */
+    polygonOffset?: boolean;
+};
+export type LayerHandle = {
+    /** Remove this layer from the scene and release its geometry. */
+    remove(): void;
+};
 export type DungeonRenderer = {
     /**
      * Update the renderer's entity list. Call this on every 'turn' event
      * (or whenever entity positions change) to keep the scene in sync.
      */
     setEntities(entities: EntityBase[]): void;
+    /**
+     * Add an instanced geometry layer on top of existing walls, ceilings, or
+     * floors.  May be called before or after the dungeon is generated; layers
+     * added before generation are deferred and applied automatically.
+     *
+     * Returns a handle whose `remove()` method tears the layer down.
+     */
+    addLayer(spec: LayerSpec): LayerHandle;
+    /**
+     * Create a new atlas `ShaderMaterial` using the same texture, fog, and
+     * shader settings as the renderer's own geometry.  Useful when building a
+     * layer material that should display tiles from the configured atlas.
+     * Returns `null` when no atlas was passed to `createDungeonRenderer`.
+     */
+    createAtlasMaterial(): THREE.ShaderMaterial | null;
     /** Unmount the canvas and release all Three.js resources. */
     destroy(): void;
 };
