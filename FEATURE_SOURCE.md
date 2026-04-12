@@ -39,6 +39,7 @@ src/lib/
   rendering/
     dungeonRenderer.ts
     torchLighting.ts
+    basicLighting.ts
     camera.ts
     tileAtlas.ts
     temperatureMask.ts
@@ -67,11 +68,12 @@ src/lib/
 
 ---
 
-### First-person 3D dungeon rendering with torch lighting and fog
+### First-person 3D dungeon rendering with lighting and fog
 
 **Files:**
-- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; supports per-cell floor/ceiling height offsets via `aHeightOffset` instance attribute in the vertex shader
-- `rendering/torchLighting.ts` — torch color, intensity, and banding constants; per-frame light computation
+- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; supports per-cell floor/ceiling height offsets via `aHeightOffset` instance attribute in the vertex shader; uses `basicLighting.ts` shaders
+- `rendering/basicLighting.ts` — minimal atlas and object shaders: texture sampling + linear fog only; no torch flicker or tint bands; used by `dungeonRenderer.ts`
+- `rendering/torchLighting.ts` — torch color, intensity, banding constants, and flickering GLSL chunks; available for custom renderers that want animated torch lighting
 - `rendering/camera.ts` — camera state, `tryMove` wall-collision logic, lerp movement, EotB-style movement as secondary export
 - `rendering/tileAtlas.ts` — UV coordinate helpers for sampling wall/floor/ceiling tiles from the atlas texture
 - `rendering/temperatureMask.ts` — optional per-region temperature tinting, passed as a shader uniform

@@ -1,32 +1,5 @@
 import { GameHandle } from '../api/createGame';
 import { EntityBase } from '../entities/types';
-/**
- * dungeonRenderer.ts
- *
- * Plain Three.js first-person dungeon renderer — no React or R3F required.
- * Designed for script-tag usage: create it after `game.generate()` is wired
- * up, and it will visualise the dungeon and player/entity positions.
- *
- * Usage (plain colours):
- *   const renderer = createDungeonRenderer(document.getElementById('viewport'), game);
- *
- * Usage (tile atlas):
- *   const renderer = createDungeonRenderer(el, game, {
- *     atlas: {
- *       texture,
- *       tileWidth: 16, tileHeight: 16,
- *       sheetWidth: 256, sheetHeight: 256,
- *       columns: 16,
- *     },
- *     floorTileId: 0,
- *     ceilTileId: 1,
- *     wallTileId: 2,
- *   });
- *
- *   // Pass live entity list on every turn:
- *   game.events.on('turn', () => renderer.setEntities(enemies));
- */
-import * as THREE from 'three';
 /** Describes a sprite-sheet atlas used for tile texturing. */
 export type TileAtlasConfig = {
     /**
@@ -72,16 +45,6 @@ export type DungeonRendererOptions = {
     ceilTileId?: number;
     /** Atlas tile index (0-based) for wall faces. Default: 0. */
     wallTileId?: number;
-    /**
-     * Distance (world units) at which brightness falloff begins.
-     * Everything closer is rendered at full torch brightness (band 0).
-     * Default: 8.
-     */
-    bandNear?: number;
-    /** Additive warm torch colour. Default: #ffd966 (warm yellow). */
-    torchColor?: THREE.Color;
-    /** Torch intensity multiplier 0–2. Default: 0.33. */
-    torchIntensity?: number;
 };
 export type DungeonRenderer = {
     /**

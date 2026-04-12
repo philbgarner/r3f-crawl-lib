@@ -28,6 +28,7 @@
 import * as THREE from 'three';
 import type { GameHandle } from '../api/createGame';
 import type { EntityBase } from '../entities/types';
+import { BASIC_ATLAS_VERT, BASIC_ATLAS_FRAG, makeBasicAtlasUniforms } from './basicLighting';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -79,16 +80,6 @@ export type DungeonRendererOptions = {
   ceilTileId?: number;
   /** Atlas tile index (0-based) for wall faces. Default: 0. */
   wallTileId?: number;
-  /**
-   * Distance (world units) at which brightness falloff begins.
-   * Everything closer is rendered at full torch brightness (band 0).
-   * Default: 8.
-   */
-  bandNear?: number;
-  /** Additive warm torch colour. Default: #ffd966 (warm yellow). */
-  torchColor?: THREE.Color;
-  /** Torch intensity multiplier 0–2. Default: 0.33. */
-  torchIntensity?: number;
 };
 
 export type DungeonRenderer = {
@@ -102,157 +93,8 @@ export type DungeonRenderer = {
 };
 
 // ---------------------------------------------------------------------------
-// Inline GLSL — torch lighting chunks (ported from torchLighting.ts)
+// Tile atlas shaders (imported from basicLighting.ts)
 // ---------------------------------------------------------------------------
-
-const TORCH_UNIFORMS_GLSL = /* glsl */ `
-uniform float uFogNear;
-uniform float uFogFar;
-uniform float uBandNear;
-uniform float uTime;
-uniform vec3  uTint0;
-uniform vec3  uTint1;
-uniform vec3  uTint2;
-uniform vec3  uTint3;
-uniform vec3  uTorchColor;
-uniform float uTorchIntensity;
-`;
-
-const TORCH_HASH_GLSL = /* glsl */ `
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-`;
-
-const TORCH_FNS_GLSL = /* glsl */ `
-float torchBand(float flickerRadius) {
-  float raw = sin(uTime * 7.0)  * 0.45
-            + sin(uTime * 13.7) * 0.35
-            + sin(uTime * 3.1)  * 0.20;
-  float flicker = (floor(raw * 1.5 + 0.5)) / 6.0;
-  float dist = clamp((vFogDist - uBandNear) / (uFogFar - uBandNear), 0.0, 1.0);
-  float flickeredDist = clamp(dist + flicker * flickerRadius, 0.0, 1.0);
-  return floor(pow(flickeredDist, 0.75) * 5.0);
-}
-
-vec3 applyTorchLighting(vec3 baseColor, float band) {
-  float timeSlot = floor(uTime * 1.5);
-  vec2 cell = floor(vWorldPos * 0.5);
-  float spatialNoise = hash(cell + vec2(timeSlot * 7.3, timeSlot * 3.1));
-  float turb = (floor(spatialNoise * 3.0) / 3.0) * 0.18;
-
-  float brightness;
-  vec3  tint;
-  if (band < 1.0) {
-    brightness = 1.00 - turb; tint = uTint0;
-  } else if (band < 2.0) {
-    brightness = 0.55;        tint = uTint1;
-  } else if (band < 3.0) {
-    brightness = 0.22;        tint = uTint2;
-  } else if (band < 4.0) {
-    brightness = 0.10;        tint = uTint3;
-  } else {
-    brightness = 0.00;        tint = vec3(1.0);
-  }
-
-  vec3 lit = baseColor * tint * brightness;
-  float torchAdd = (band < 1.0) ? 0.250 :
-                   (band < 2.0) ? 0.200 : 0.0;
-  lit += uTorchColor * (torchAdd * uTorchIntensity);
-  return lit;
-}
-`;
-
-// How much the torch radius breathes (fraction of the fog range).
-const FLICKER_RADIUS = 0.03;
-// z-component of the bump tangent normal — larger = flatter bump effect.
-const BUMP_DEPTH = 0.3;
-
-// ---------------------------------------------------------------------------
-// Tile atlas shaders
-// ---------------------------------------------------------------------------
-
-const ATLAS_VERT = /* glsl */ `
-attribute float aTileId;
-attribute float aHeightOffset; // world-space Y offset in units (positive = up)
-uniform vec2  uTileSize;
-uniform float uColumns;
-
-varying vec2  vAtlasUv;
-varying vec2  vTileOrigin;
-varying float vFogDist;
-varying vec2  vWorldPos;
-varying vec3  vWorldPos3D;
-varying vec3  vFaceNormal;
-varying vec2  vTileUv;
-
-void main() {
-  float id  = floor(aTileId + 0.5);
-  float col = mod(id, uColumns);
-  float row = floor(id / uColumns);
-
-  vec2 offset = vec2(col * uTileSize.x, 1.0 - (row + 1.0) * uTileSize.y);
-  vAtlasUv    = offset + uv * uTileSize;
-  vTileOrigin = offset;
-  vTileUv     = uv;
-
-  vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-  worldPos.y += aHeightOffset;
-  vWorldPos    = worldPos.xz;
-  vWorldPos3D  = worldPos.xyz;
-  vFaceNormal  = normalize(mat3(modelMatrix * instanceMatrix) * vec3(0.0, 0.0, 1.0));
-
-  vec4 eyePos = viewMatrix * worldPos;
-  vFogDist = length(eyePos.xyz);
-
-  gl_Position = projectionMatrix * eyePos;
-}
-`;
-
-const ATLAS_FRAG = /* glsl */ `
-uniform sampler2D uAtlas;
-uniform vec2  uTileSize;
-uniform float uColumns;
-uniform vec3  uFogColor;
-uniform float uFlickerRadius;
-uniform vec2  uTexelSize;
-${TORCH_UNIFORMS_GLSL}
-
-varying vec2  vAtlasUv;
-varying vec2  vTileOrigin;
-varying float vFogDist;
-varying vec2  vWorldPos;
-varying vec3  vWorldPos3D;
-varying vec3  vFaceNormal;
-varying vec2  vTileUv;
-
-${TORCH_HASH_GLSL}
-${TORCH_FNS_GLSL}
-
-void main() {
-  // Clamp to tile texel bounds to prevent atlas bleed from perspective interpolation.
-  vec2 uvMin = vTileOrigin + uTexelSize * 0.5;
-  vec2 uvMax = vTileOrigin + uTileSize  - uTexelSize * 0.5;
-  vec2 atlasUv = clamp(vAtlasUv, uvMin, uvMax);
-
-  vec4 color = texture2D(uAtlas, atlasUv);
-  if (color.a < 0.01) discard;
-
-  // Bump from intensity gradient: derive tangent normal from neighbouring texels.
-  vec3 luma = vec3(0.299, 0.587, 0.114);
-  float l0 = dot(color.rgb, luma);
-  float lR = dot(texture2D(uAtlas, clamp(atlasUv + vec2(uTexelSize.x, 0.0), uvMin, uvMax)).rgb, luma);
-  float lU = dot(texture2D(uAtlas, clamp(atlasUv + vec2(0.0, uTexelSize.y), uvMin, uvMax)).rgb, luma);
-  vec3 bumpN = normalize(vec3(l0 - lR, l0 - lU, ${BUMP_DEPTH}));
-  float bumpShade = clamp(dot(bumpN, normalize(vec3(0.5, 0.5, 1.0))), 0.0, 1.0);
-  bumpShade = 0.8 + 0.35 * bumpShade;
-
-  float band = torchBand(uFlickerRadius);
-  vec3 lit = applyTorchLighting(color.rgb * bumpShade, band);
-
-  gl_FragColor = vec4(mix(lit, uFogColor, step(4.0, band)), color.a);
-}
-`;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -261,7 +103,6 @@ void main() {
 const HALF_PI = Math.PI / 2;
 /** Eye height as a fraction of ceiling height (same as PerspectiveDungeonView). */
 const EYE_HEIGHT_FACTOR = 0.4;
-const DEFAULT_BAND_NEAR = 8;
 
 function makeFaceMatrix(
   x: number, y: number, z: number,
@@ -312,21 +153,18 @@ export function createDungeonRenderer(
   game: GameHandle,
   options: DungeonRendererOptions = {},
 ): DungeonRenderer {
-  const tileSize      = options.tileSize      ?? 3;
-  const ceilingH      = options.ceilingHeight ?? 3;
-  const fov           = options.fov           ?? 75;
-  const fogNear       = options.fogNear       ?? 5;
-  const fogFar        = options.fogFar        ?? 24;
-  const fogHex        = options.fogColor      ?? '#000000';
-  const lerpFactor    = options.lerpFactor    ?? 0.18;
-  const fogColor      = new THREE.Color(fogHex);
-  const atlas         = options.atlas;
-  const floorTileId   = options.floorTileId   ?? 0;
-  const ceilTileId    = options.ceilTileId    ?? 0;
-  const wallTileId    = options.wallTileId    ?? 0;
-  const bandNear      = options.bandNear      ?? DEFAULT_BAND_NEAR;
-  const torchColor    = options.torchColor    ?? new THREE.Color(1.0, 0.85, 0.4);
-  const torchIntensity = options.torchIntensity ?? 0.33;
+  const tileSize    = options.tileSize      ?? 3;
+  const ceilingH    = options.ceilingHeight ?? 3;
+  const fov         = options.fov           ?? 75;
+  const fogNear     = options.fogNear       ?? 5;
+  const fogFar      = options.fogFar        ?? 24;
+  const fogHex      = options.fogColor      ?? '#000000';
+  const lerpFactor  = options.lerpFactor    ?? 0.18;
+  const fogColor    = new THREE.Color(fogHex);
+  const atlas       = options.atlas;
+  const floorTileId = options.floorTileId   ?? 0;
+  const ceilTileId  = options.ceilTileId    ?? 0;
+  const wallTileId  = options.wallTileId    ?? 0;
 
   // ── WebGL renderer ────────────────────────────────────────────────────────
   const glRenderer = new THREE.WebGLRenderer({ antialias: false });
@@ -344,13 +182,10 @@ export function createDungeonRenderer(
   const camera = new THREE.PerspectiveCamera(fov, 1, 0.05, fogFar * 2);
 
   // ── Lighting ──────────────────────────────────────────────────────────────
-  scene.add(new THREE.AmbientLight(0xffffff, 0.06));
-  const torchLight = new THREE.PointLight(0xffe8c0, 3, tileSize * 5, 2);
-  scene.add(torchLight);
-
-  // ── Atlas shader materials ─────────────────────────────────────────────────
-  // Collect all ShaderMaterials so we can update uTime each frame.
-  const atlasMaterials: THREE.ShaderMaterial[] = [];
+  scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+  dirLight.position.set(0.5, 1, 0.75);
+  scene.add(dirLight);
 
   function makeAtlasMaterial(atlasConfig: TileAtlasConfig): THREE.ShaderMaterial {
     // Create texture using this module's bundled Three.js so the WebGLRenderer
@@ -361,36 +196,25 @@ export function createDungeonRenderer(
     tex.needsUpdate = true;
 
     const mat = new THREE.ShaderMaterial({
-      vertexShader: ATLAS_VERT,
-      fragmentShader: ATLAS_FRAG,
-      uniforms: {
-        uAtlas:         { value: tex },
-        uTileSize:      { value: new THREE.Vector2(
+      vertexShader: BASIC_ATLAS_VERT,
+      fragmentShader: BASIC_ATLAS_FRAG,
+      uniforms: makeBasicAtlasUniforms({
+        atlas: tex,
+        tileSize: new THREE.Vector2(
           atlasConfig.tileWidth  / atlasConfig.sheetWidth,
           atlasConfig.tileHeight / atlasConfig.sheetHeight,
-        )},
-        uColumns:       { value: atlasConfig.columns },
-        uTexelSize:     { value: new THREE.Vector2(
+        ),
+        texelSize: new THREE.Vector2(
           1 / atlasConfig.sheetWidth,
           1 / atlasConfig.sheetHeight,
-        )},
-        uFogColor:      { value: fogColor },
-        uFogNear:       { value: fogNear },
-        uFogFar:        { value: fogFar },
-        uFlickerRadius: { value: FLICKER_RADIUS },
-        uTime:          { value: 0 },
-        // Torch lighting bands
-        uBandNear:      { value: bandNear },
-        uTint0:         { value: new THREE.Color(1.0,  1.0,  1.0)  },
-        uTint1:         { value: new THREE.Color(0.67, 0.67, 0.67) },
-        uTint2:         { value: new THREE.Color(0.33, 0.33, 0.33) },
-        uTint3:         { value: new THREE.Color(0.25, 0.25, 0.25) },
-        uTorchColor:    { value: torchColor },
-        uTorchIntensity:{ value: torchIntensity },
-      },
+        ),
+        columns: atlasConfig.columns,
+        fogColor,
+        fogNear,
+        fogFar,
+      }),
       side: THREE.FrontSide,
     });
-    atlasMaterials.push(mat);
     return mat;
   }
 
@@ -601,11 +425,6 @@ export function createDungeonRenderer(
     const dt = Math.min((t - lastT) / 1000, 0.1);
     lastT = t;
 
-    const tSec = t / 1000;
-    for (const mat of atlasMaterials) {
-      if (mat.uniforms.uTime) mat.uniforms.uTime.value = tSec;
-    }
-
     if (initialized) {
       const k = 1 - Math.pow(1 - lerpFactor, dt * 60);
       curX += (tgtX - curX) * k;
@@ -618,7 +437,6 @@ export function createDungeonRenderer(
 
       camera.position.set(curX, ceilingH * EYE_HEIGHT_FACTOR, curZ);
       camera.rotation.set(0, curYaw, 0, 'YXZ');
-      torchLight.position.copy(camera.position);
     }
 
     glRenderer.render(scene, camera);
