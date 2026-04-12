@@ -189,7 +189,7 @@ These are pure algorithms; they receive dungeon data and return decisions — no
 
 ---
 
-## Phase 7 — Hidden passages and Tiled import
+## Phase 7 — Hidden passages and Tiled import ✅ COMPLETE
 
 **Goal:** Passage traversal state machine and mask; plus the Tiled JSON → `DungeonOutputs` conversion.
 These depend on the dungeon grid shape (Phase 3) and entity types (Phase 4).
@@ -220,7 +220,7 @@ These depend on the dungeon grid shape (Phase 3) and entity types (Phase 4).
 
 ---
 
-## Phase 8 — Rendering layer
+## Phase 8 — Rendering layer ✅ COMPLETE
 
 **Goal:** Atlas UV lookup, GLSL torch lighting, first-person camera, and the temperature/surface mask.
 These are the Three.js-coupled modules — everything that touches `DataTexture` or shader strings.
