@@ -1,0 +1,277 @@
+// multiplayer.js — r3f-crawl-lib multiplayer example
+//
+// Compared to basic.js, the only differences are:
+//  1. Connect to the server first (async, before createGame).
+//  2. Pass player.id (server-assigned) and transport into createGame options.
+//  3. Host sends the solid map to the server after generate() so the server
+//     can validate moves.
+//  4. Listen to 'network-state' events to render other players as entities.
+//
+// game.turns.commit() routing is handled transparently by the transport
+// middleware — the keybindings section below is identical to basic.js.
+
+const {
+  createGame,
+  createEnemy,
+  attachSpawner,
+  attachKeybindings,
+  createDungeonRenderer,
+  createWebSocketTransport,
+} = CrawlLib;
+
+// ---------------------------------------------------------------------------
+// DOM refs
+// ---------------------------------------------------------------------------
+
+const connectScreen = document.getElementById('connect-screen');
+const connectBtn    = document.getElementById('connect-btn');
+const serverUrlEl   = document.getElementById('server-url');
+const connectError  = document.getElementById('connect-error');
+const viewportEl    = document.getElementById('viewport');
+const logEl         = document.getElementById('log');
+const hpEl          = document.getElementById('hp');
+const turnEl        = document.getElementById('turn');
+const posEl         = document.getElementById('pos');
+const playerCountEl = document.getElementById('player-count');
+
+// ---------------------------------------------------------------------------
+// Connection flow
+// ---------------------------------------------------------------------------
+
+connectBtn.addEventListener('click', async () => {
+  connectBtn.disabled = true;
+  connectError.style.display = 'none';
+
+  const url = serverUrlEl.value.trim();
+  const transport = createWebSocketTransport(url);
+
+  let info;
+  try {
+    info = await transport.connect();
+  } catch (err) {
+    connectError.textContent = 'Could not connect: ' + (err?.message ?? err);
+    connectError.style.display = 'block';
+    connectBtn.disabled = false;
+    return;
+  }
+
+  connectScreen.style.display = 'none';
+  startGame(transport, info);
+});
+
+// ---------------------------------------------------------------------------
+// Dungeon config (same seed → same dungeon on every client)
+// ---------------------------------------------------------------------------
+
+const MY_DUNGEON_CONFIG = {
+  width: 40,
+  height: 40,
+  seed: 0xdeadbeef,
+  roomMinSize: 5,
+  roomMaxSize: 11,
+  roomCount: 12,
+};
+
+// ---------------------------------------------------------------------------
+// Entity tracking (enemies spawned on the host, synced via server state)
+// ---------------------------------------------------------------------------
+
+const enemies = [];
+let spawned = 0;
+const MAX_ENEMIES = 0;
+
+// Other connected players — updated on every network-state event
+let otherPlayerEntities = [];
+
+// ---------------------------------------------------------------------------
+// Main game setup
+// ---------------------------------------------------------------------------
+
+function startGame(transport, { playerId, isHost, dungeonConfig }) {
+  addLog(`Connected as ${playerId} (${isHost ? 'host' : 'peer'})`, 'turn');
+
+  // Non-host clients receive the dungeon config from the server so they
+  // generate the identical dungeon (same seed). Host uses its own config.
+  const dungeon = isHost ? MY_DUNGEON_CONFIG : (dungeonConfig ?? MY_DUNGEON_CONFIG);
+
+  const game = createGame(document.body, {
+    dungeon,
+    player: {
+      id: playerId,   // <-- match server-assigned id so reconciliation aligns
+      hp: 30,
+      maxHp: 30,
+      attack: 5,
+      defense: 2,
+      speed: 5,
+    },
+    combat: {
+      onDamage({ attacker, defender, amount }) {
+        addLog(`${attacker.type} hits ${defender.type} for ${amount} dmg`, 'damage');
+      },
+      onDeath({ entity }) {
+        addLog(`${entity.type} is slain!`, 'death');
+      },
+      onMiss({ attacker, defender }) {
+        addLog(`${attacker.type} misses ${defender.type}`, 'turn');
+      },
+    },
+    // Passing the transport is all that's needed to enable server-authoritative
+    // mode. game.turns.commit() will forward actions to the server instead of
+    // applying them locally. The server broadcasts state updates and createGame
+    // reconciles them automatically.
+    transport,
+  });
+
+  // ── 3D renderer ──────────────────────────────────────────────────────────
+
+  let renderer;
+  const atlasImg = new Image();
+  atlasImg.onload = () => {
+    renderer = createDungeonRenderer(viewportEl, game, {
+      atlas: {
+        image: atlasImg,
+        tileWidth: 64,
+        tileHeight: 64,
+        sheetWidth: 512,
+        sheetHeight: 1024,
+        columns: 8,
+      },
+      floorTileId: 20,
+      ceilTileId:  19,
+      wallTileId:  16,
+    });
+
+    game.generate();
+
+    // Host sends solid map to server so it can validate all players' moves
+    if (isHost) {
+      const solid = Array.from(game.dungeon.outputs.textures.solid.image.data);
+      transport.initDungeon({
+        solid,
+        width:  game.dungeon.width,
+        height: game.dungeon.height,
+        config: MY_DUNGEON_CONFIG,
+      });
+    }
+  };
+  atlasImg.src = '/examples/basic/atlas.png';
+
+  // ── Spawner (host generates enemies; server syncs their positions) ────────
+
+  attachSpawner(game, {
+    onSpawn({ roomId, x, y }) {
+      if (!isHost) return null;          // only host spawns enemies
+      if (spawned >= MAX_ENEMIES) return null;
+      if (roomId < 2) return null;
+      if (Math.random() > 0.55) return null;
+      spawned++;
+      const e = createEnemy({
+        type: 'goblin', sprite: 'g',
+        x, z: y,
+        hp: 8, maxHp: 8, attack: 2, defense: 0,
+        speed: 6, danger: 1, xp: 10,
+      });
+      enemies.push(e);
+      return e;
+    },
+  });
+
+  // ── Events ───────────────────────────────────────────────────────────────
+
+  game.events.on('turn', ({ turn }) => {
+    turnEl.textContent = String(turn);
+    hpEl.textContent = `${game.player.hp} / ${game.player.maxHp}`;
+    posEl.textContent = `${game.player.x}, ${game.player.z}`;
+    if (renderer) renderer.setEntities([...enemies, ...otherPlayerEntities]);
+  });
+
+  // 'network-state' is emitted by createGame whenever the server pushes a
+  // state update. Use it to rebuild the list of other players for rendering.
+  game.events.on('network-state', (update) => {
+    const allPlayers = Object.entries(update.players);
+    playerCountEl.textContent = String(allPlayers.length);
+
+    otherPlayerEntities = allPlayers
+      .filter(([pid]) => pid !== playerId)
+      .map(([pid, ps]) => ({
+        id: pid,
+        kind: 'npc',
+        type: 'player',
+        sprite: 'player',
+        x: ps.x,
+        z: ps.y,
+        hp: ps.hp,
+        maxHp: ps.maxHp,
+        alive: ps.alive,
+        attack: 0, defense: 0,
+        speed: 0,
+        blocksMove: false,
+        faction: 'player',
+        tick: 0,
+      }));
+  });
+
+  game.events.on('audio', ({ name }) => {
+    addLog(`[sfx] ${name}`, 'audio');
+  });
+
+  // ── Keyboard input (identical to basic.js) ────────────────────────────────
+
+  attachKeybindings(game, {
+    bindings: {
+      moveForward:  ['w', 'W', 'ArrowUp'],
+      moveBackward: ['s', 'S', 'ArrowDown'],
+      moveLeft:     ['a', 'A', 'ArrowLeft'],
+      moveRight:    ['d', 'D', 'ArrowRight'],
+      turnLeft:     ['q', 'Q'],
+      turnRight:    ['e', 'E'],
+      wait:         [' '],
+    },
+    onAction(action, event) {
+      event.preventDefault();
+      if (!game.player.alive) {
+        addLog('You are dead. Refresh to restart.', 'death');
+        return;
+      }
+
+      function relativeMove(forward, strafe) {
+        const yaw = game.player.facing;
+        const fx = Math.round(-Math.sin(yaw));
+        const fz = Math.round(-Math.cos(yaw));
+        const sx = Math.round(Math.cos(yaw));
+        const sz = Math.round(-Math.sin(yaw));
+        return game.player.move(
+          forward * fx + strafe * sx,
+          forward * fz + strafe * sz,
+        );
+      }
+
+      let a;
+      switch (action) {
+        case 'moveForward':  a = relativeMove(1,  0);  break;
+        case 'moveBackward': a = relativeMove(-1, 0);  break;
+        case 'moveLeft':     a = relativeMove(0, -1);  break;
+        case 'moveRight':    a = relativeMove(0,  1);  break;
+        case 'turnLeft':     a = game.player.rotate( Math.PI / 2); break;
+        case 'turnRight':    a = game.player.rotate(-Math.PI / 2); break;
+        case 'wait':         a = game.player.wait();   break;
+      }
+
+      // game.turns.commit() transparently forwards to the server when a
+      // transport is configured — no change needed here vs. single-player.
+      if (a) game.turns.commit(a);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function addLog(text, cls) {
+  const div = document.createElement('div');
+  div.className = 'entry' + (cls ? ' ' + cls : '');
+  div.textContent = text;
+  logEl.prepend(div);
+  while (logEl.children.length > 40) logEl.lastElementChild.remove();
+}

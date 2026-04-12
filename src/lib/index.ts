@@ -18,6 +18,10 @@ export { loadTiledMap }                              from './dungeon/tiled'
 export { createDungeonRenderer } from './rendering/dungeonRenderer'
 export type { DungeonRendererOptions, DungeonRenderer } from './rendering/dungeonRenderer'
 
+// Transport
+export { createWebSocketTransport }                  from './transport/websocket'
+export type { ActionTransport, ServerStateUpdate, PlayerNetState, DungeonInitPayload } from './transport/types'
+
 // Type exports
 export type { GameEventMap, EventEmitter }           from './events/eventEmitter'
 export type { DungeonOutputs, BspDungeonOutputs }    from './dungeon/bsp'
