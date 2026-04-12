@@ -2872,6 +2872,8 @@ void main() {
 		let floorMesh = null;
 		let ceilMesh = null;
 		let wallMesh = null;
+		let floorEdgeMesh = null;
+		let ceilEdgeMesh = null;
 		let dungeonBuilt = false;
 		function buildDungeon() {
 			if (dungeonBuilt) return;
@@ -2887,14 +2889,30 @@ void main() {
 			const floors = [];
 			const ceils = [];
 			const walls = [];
+			const floorEdges = [];
+			const ceilEdges = [];
 			const floorIds = [];
 			const ceilIds = [];
 			const wallIds = [];
+			const floorEdgeIds = [];
+			const ceilEdgeIds = [];
 			const floorOffsets = [];
 			const ceilOffsets = [];
 			function isSolid(cx, cz) {
 				if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
 				return (solid[cz * width + cx] ?? 0) > 0;
+			}
+			function openFloorVal(ncx, ncz) {
+				if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+				if (isSolid(ncx, ncz)) return null;
+				const nidx = ncz * width + ncx;
+				return floorOffData ? floorOffData[nidx] ?? 128 : 128;
+			}
+			function openCeilVal(ncx, ncz) {
+				if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+				if (isSolid(ncx, ncz)) return null;
+				const nidx = ncz * width + ncx;
+				return ceilOffData ? ceilOffData[nidx] ?? 128 : 128;
 			}
 			for (let cz = 0; cz < height; cz++) for (let cx = 0; cx < width; cx++) {
 				if (isSolid(cx, cz)) continue;
@@ -2927,6 +2945,50 @@ void main() {
 					walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
 					wallIds.push(wallTileId);
 				}
+				if (floorVal !== 0) {
+					const feMidY = -tileSize / 2;
+					const nfN = openFloorVal(cx, cz - 1);
+					if (nfN !== null && nfN < floorVal) {
+						floorEdges.push(makeFaceMatrix(wx, feMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
+						floorEdgeIds.push(floorTileId);
+					}
+					const nfS = openFloorVal(cx, cz + 1);
+					if (nfS !== null && nfS < floorVal) {
+						floorEdges.push(makeFaceMatrix(wx, feMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
+						floorEdgeIds.push(floorTileId);
+					}
+					const nfW = openFloorVal(cx - 1, cz);
+					if (nfW !== null && nfW < floorVal) {
+						floorEdges.push(makeFaceMatrix(cx * tileSize, feMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
+						floorEdgeIds.push(floorTileId);
+					}
+					const nfE = openFloorVal(cx + 1, cz);
+					if (nfE !== null && nfE < floorVal) {
+						floorEdges.push(makeFaceMatrix((cx + 1) * tileSize, feMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
+						floorEdgeIds.push(floorTileId);
+					}
+				}
+				const ceMidY = ceilingH + tileSize / 2;
+				const ncN = openCeilVal(cx, cz - 1);
+				if (ncN !== null && ncN > ceilVal) {
+					ceilEdges.push(makeFaceMatrix(wx, ceMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
+					ceilEdgeIds.push(ceilTileId);
+				}
+				const ncS = openCeilVal(cx, cz + 1);
+				if (ncS !== null && ncS > ceilVal) {
+					ceilEdges.push(makeFaceMatrix(wx, ceMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
+					ceilEdgeIds.push(ceilTileId);
+				}
+				const ncW = openCeilVal(cx - 1, cz);
+				if (ncW !== null && ncW > ceilVal) {
+					ceilEdges.push(makeFaceMatrix(cx * tileSize, ceMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
+					ceilEdgeIds.push(ceilTileId);
+				}
+				const ncE = openCeilVal(cx + 1, cz);
+				if (ncE !== null && ncE > ceilVal) {
+					ceilEdges.push(makeFaceMatrix((cx + 1) * tileSize, ceMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
+					ceilEdgeIds.push(ceilTileId);
+				}
 			}
 			floorMesh = buildInstancedMesh(floors, floorIds, floorMat, !!atlas, new Float32Array(floorOffsets));
 			scene.add(floorMesh);
@@ -2934,6 +2996,10 @@ void main() {
 			scene.add(ceilMesh);
 			wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas);
 			scene.add(wallMesh);
+			floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas);
+			scene.add(floorEdgeMesh);
+			ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilMat, !!atlas);
+			scene.add(ceilEdgeMesh);
 		}
 		const entityGeo = new three.BoxGeometry(tileSize * .35, ceilingH * .55, tileSize * .35);
 		const entityMat = new three.MeshStandardMaterial({ color: 13378082 });

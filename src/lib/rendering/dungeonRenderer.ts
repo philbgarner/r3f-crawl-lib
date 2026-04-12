@@ -406,9 +406,11 @@ export function createDungeonRenderer(
     : new THREE.MeshStandardMaterial({ color: 0x6b6070 });
 
   // ── Dungeon geometry ──────────────────────────────────────────────────────
-  let floorMesh: THREE.InstancedMesh | null = null;
-  let ceilMesh:  THREE.InstancedMesh | null = null;
-  let wallMesh:  THREE.InstancedMesh | null = null;
+  let floorMesh:     THREE.InstancedMesh | null = null;
+  let ceilMesh:      THREE.InstancedMesh | null = null;
+  let wallMesh:      THREE.InstancedMesh | null = null;
+  let floorEdgeMesh: THREE.InstancedMesh | null = null;
+  let ceilEdgeMesh:  THREE.InstancedMesh | null = null;
   let dungeonBuilt = false;
 
   function buildDungeon() {
@@ -430,15 +432,33 @@ export function createDungeonRenderer(
     const floors:        THREE.Matrix4[] = [];
     const ceils:         THREE.Matrix4[] = [];
     const walls:         THREE.Matrix4[] = [];
+    const floorEdges:    THREE.Matrix4[] = [];
+    const ceilEdges:     THREE.Matrix4[] = [];
     const floorIds:      number[]        = [];
     const ceilIds:       number[]        = [];
     const wallIds:       number[]        = [];
+    const floorEdgeIds:  number[]        = [];
+    const ceilEdgeIds:   number[]        = [];
     const floorOffsets:  number[]        = [];
     const ceilOffsets:   number[]        = [];
 
     function isSolid(cx: number, cz: number) {
       if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
       return (solid[cz * width + cx] ?? 0) > 0;
+    }
+
+    // Returns the raw offset value for an open cell, or null if solid/out-of-bounds.
+    function openFloorVal(ncx: number, ncz: number): number | null {
+      if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+      if (isSolid(ncx, ncz)) return null;
+      const nidx = ncz * width + ncx;
+      return floorOffData ? (floorOffData[nidx] ?? 128) : 128;
+    }
+    function openCeilVal(ncx: number, ncz: number): number | null {
+      if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+      if (isSolid(ncx, ncz)) return null;
+      const nidx = ncz * width + ncx;
+      return ceilOffData ? (ceilOffData[nidx] ?? 128) : 128;
     }
 
     for (let cz = 0; cz < height; cz++) {
@@ -467,6 +487,24 @@ export function createDungeonRenderer(
         if (isSolid(cx, cz + 1)) { walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
         if (isSolid(cx - 1, cz)) { walls.push(makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
         if (isSolid(cx + 1, cz)) { walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH)); wallIds.push(wallTileId); }
+
+        // Voxel-style floor edge skirts: side faces of the floor cube (top=y0, extends down).
+        // Only emit when the open neighbour has a different floor offset (Minecraft face-culling rule).
+        if (floorVal !== 0) {
+          const feMidY = -tileSize / 2;
+          // Outward-facing = opposite rotations to inward-facing walls.
+          const nfN = openFloorVal(cx, cz - 1); if (nfN !== null && nfN < floorVal) { floorEdges.push(makeFaceMatrix(wx,               feMidY, cz * tileSize,         0, Math.PI,    0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+          const nfS = openFloorVal(cx, cz + 1); if (nfS !== null && nfS < floorVal) { floorEdges.push(makeFaceMatrix(wx,               feMidY, (cz + 1) * tileSize,   0, 0,          0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+          const nfW = openFloorVal(cx - 1, cz); if (nfW !== null && nfW < floorVal) { floorEdges.push(makeFaceMatrix(cx * tileSize,     feMidY, wz,                    0, -HALF_PI,   0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+          const nfE = openFloorVal(cx + 1, cz); if (nfE !== null && nfE < floorVal) { floorEdges.push(makeFaceMatrix((cx+1) * tileSize, feMidY, wz,                    0, HALF_PI,    0, tileSize, tileSize)); floorEdgeIds.push(floorTileId); }
+        }
+
+        // Voxel-style ceiling edge skirts: side faces of the ceiling cube (bottom=ceilingH, extends up).
+        const ceMidY = ceilingH + tileSize / 2;
+        const ncN = openCeilVal(cx, cz - 1); if (ncN !== null && ncN > ceilVal) { ceilEdges.push(makeFaceMatrix(wx,               ceMidY, cz * tileSize,         0, Math.PI,    0, tileSize, tileSize)); ceilEdgeIds.push(ceilTileId); }
+        const ncS = openCeilVal(cx, cz + 1); if (ncS !== null && ncS > ceilVal) { ceilEdges.push(makeFaceMatrix(wx,               ceMidY, (cz + 1) * tileSize,   0, 0,          0, tileSize, tileSize)); ceilEdgeIds.push(ceilTileId); }
+        const ncW = openCeilVal(cx - 1, cz); if (ncW !== null && ncW > ceilVal) { ceilEdges.push(makeFaceMatrix(cx * tileSize,     ceMidY, wz,                    0, -HALF_PI,   0, tileSize, tileSize)); ceilEdgeIds.push(ceilTileId); }
+        const ncE = openCeilVal(cx + 1, cz); if (ncE !== null && ncE > ceilVal) { ceilEdges.push(makeFaceMatrix((cx+1) * tileSize, ceMidY, wz,                    0, HALF_PI,    0, tileSize, tileSize)); ceilEdgeIds.push(ceilTileId); }
       }
     }
 
@@ -478,6 +516,12 @@ export function createDungeonRenderer(
 
     wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas);
     scene.add(wallMesh);
+
+    floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas);
+    scene.add(floorEdgeMesh);
+
+    ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilMat, !!atlas);
+    scene.add(ceilEdgeMesh);
   }
 
   // ── Entity rendering ──────────────────────────────────────────────────────
