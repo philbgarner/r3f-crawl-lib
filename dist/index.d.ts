@@ -8,6 +8,7 @@ export type { ThemeDef, ThemeSelector } from './dungeon/themes';
 export type { DungeonRendererOptions, DungeonRenderer, FaceTileSpec, DirectionFaceMap, LayerTarget, LayerFaceResult, LayerSpec, LayerHandle } from './rendering/dungeonRenderer';
 export { createWebSocketTransport } from './transport/websocket';
 export type { ActionTransport, ServerStateUpdate, PlayerNetState, DungeonInitPayload } from './transport/types';
+export type { Mission, MissionStatus, MissionContext, MissionEvaluator, MissionCompleteCallback, MissionDef, MissionsHandle } from './missions/types';
 export type { GameEventMap, EventEmitter } from './events/eventEmitter';
 export type { DungeonOutputs, BspDungeonOutputs } from './dungeon/bsp';
 export type { EntityBase, HiddenPassage } from './entities/types';

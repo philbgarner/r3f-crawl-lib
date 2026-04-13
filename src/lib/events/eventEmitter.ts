@@ -37,6 +37,26 @@ export interface GameEventMap {
   lose: { reason: string };
   /** Spatial audio cue. `position` is optional world-space [x, z]. */
   audio: { name: string; position?: [number, number] };
+  /** A mission was completed by the local player. */
+  'mission-complete': {
+    missionId: string;
+    name: string;
+    /** Turn number at which the mission was completed. */
+    turn: number;
+    /** The mission's metadata bag at the time of completion. */
+    metadata?: Record<string, unknown>;
+  };
+  /**
+   * A connected peer completed a mission (multiplayer only).
+   * Emitted when the transport receives a mission_complete broadcast from the
+   * server. Single-player games never emit this event.
+   */
+  'mission-peer-complete': {
+    missionId: string;
+    name: string;
+    /** Server-assigned player ID of the peer who completed the mission. */
+    playerId: string;
+  };
 }
 
 // ---------------------------------------------------------------------------

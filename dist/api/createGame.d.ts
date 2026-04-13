@@ -9,6 +9,7 @@ import { DecorationEntity } from '../entities/factory';
 import { PlayerHandle } from './player';
 import { KeybindingsOptions } from './keybindings';
 import { ActionTransport } from '../transport/types';
+import { MissionsHandle } from '../missions/types';
 export type PublicRoom = {
     id: number;
     type: "room" | "corridor";
@@ -162,6 +163,8 @@ export type GameHandle = {
     dungeon: DungeonHandle;
     events: EventEmitter;
     combat: CombatHandle;
+    /** Mission/quest system. Add evaluator-driven missions that auto-complete each turn. */
+    missions: MissionsHandle;
     /** Generate the dungeon and start the game. Call after attaching all callbacks. */
     generate(): void;
     /**

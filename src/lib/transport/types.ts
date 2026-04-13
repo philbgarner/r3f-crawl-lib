@@ -98,4 +98,26 @@ export type ActionTransport = {
    * Register a handler that fires whenever a chat message is received.
    */
   onChat(handler: (msg: { playerId: string; text: string }) => void): void;
+
+  // ---------------------------------------------------------------------------
+  // Mission notifications (optional — omit for non-mission transports)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Notify the server that this player completed a mission. The server is
+   * expected to broadcast this to all other connected clients so they can
+   * emit a `mission-peer-complete` event locally.
+   *
+   * Optional — if absent, mission completions are not broadcast to peers.
+   */
+  sendMissionComplete?(missionId: string, name: string): void;
+
+  /**
+   * Register a handler that fires when the server relays a mission completion
+   * from another connected player. `createGame()` wires this internally to
+   * emit the `mission-peer-complete` event on the game event emitter.
+   *
+   * Optional — if absent, peer mission events are never emitted.
+   */
+  onMissionComplete?(handler: (msg: { playerId: string; missionId: string; name: string }) => void): void;
 };

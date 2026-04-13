@@ -26,6 +26,9 @@ export type { DungeonRendererOptions, DungeonRenderer, FaceTileSpec, DirectionFa
 export { createWebSocketTransport }                  from './transport/websocket'
 export type { ActionTransport, ServerStateUpdate, PlayerNetState, DungeonInitPayload } from './transport/types'
 
+// Mission system
+export type { Mission, MissionStatus, MissionContext, MissionEvaluator, MissionCompleteCallback, MissionDef, MissionsHandle } from './missions/types'
+
 // Type exports
 export type { GameEventMap, EventEmitter }           from './events/eventEmitter'
 export type { DungeonOutputs, BspDungeonOutputs }    from './dungeon/bsp'

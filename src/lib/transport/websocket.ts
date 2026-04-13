@@ -29,6 +29,7 @@ export function createWebSocketTransport(url: string): ActionTransport {
   let _playerId: string | null = null;
   const updateHandlers: Array<(update: ServerStateUpdate) => void> = [];
   const chatHandlers: Array<(msg: { playerId: string; text: string }) => void> = [];
+  const missionCompleteHandlers: Array<(msg: { playerId: string; missionId: string; name: string }) => void> = [];
 
   function dispatch(raw: string): void {
     let msg: Record<string, unknown>;
@@ -46,6 +47,15 @@ export function createWebSocketTransport(url: string): ActionTransport {
     if (msg.type === 'chat') {
       const payload = { playerId: msg.playerId as string, text: msg.text as string };
       for (const h of chatHandlers) h(payload);
+    }
+
+    if (msg.type === 'mission_complete') {
+      const payload = {
+        playerId: msg.playerId as string,
+        missionId: msg.missionId as string,
+        name: msg.name as string,
+      };
+      for (const h of missionCompleteHandlers) h(payload);
     }
   }
 
@@ -116,6 +126,15 @@ export function createWebSocketTransport(url: string): ActionTransport {
 
     onChat(handler: (msg: { playerId: string; text: string }) => void) {
       chatHandlers.push(handler);
+    },
+
+    sendMissionComplete(missionId: string, name: string) {
+      if (!ws || !_playerId) return;
+      ws.send(JSON.stringify({ type: 'mission_complete', missionId, name }));
+    },
+
+    onMissionComplete(handler: (msg: { playerId: string; missionId: string; name: string }) => void) {
+      missionCompleteHandlers.push(handler);
     },
   };
 }

@@ -1762,6 +1762,73 @@ var CrawlLib = (function(exports, three) {
 		};
 	}
 	//#endregion
+	//#region src/lib/missions/missionSystem.ts
+	function recordToPublic(r) {
+		return r;
+	}
+	function createMissionSystem(events, transport) {
+		const records = /* @__PURE__ */ new Map();
+		function completeRecord(record, turn) {
+			record.status = "complete";
+			record.completedAt = turn;
+			events.emit("mission-complete", {
+				missionId: record.id,
+				name: record.name,
+				turn,
+				metadata: record.metadata
+			});
+			record.onComplete?.(recordToPublic(record));
+			transport?.sendMissionComplete?.(record.id, record.name);
+		}
+		return {
+			add(def) {
+				if (records.has(def.id)) records.delete(def.id);
+				records.set(def.id, {
+					id: def.id,
+					name: def.name,
+					description: def.description ?? "",
+					status: "active",
+					completedAt: void 0,
+					metadata: def.metadata ? { ...def.metadata } : {},
+					evaluator: def.evaluator,
+					onComplete: def.onComplete
+				});
+			},
+			remove(id) {
+				records.delete(id);
+			},
+			get(id) {
+				const r = records.get(id);
+				return r ? recordToPublic(r) : void 0;
+			},
+			get list() {
+				return Array.from(records.values()).map(recordToPublic);
+			},
+			get active() {
+				return Array.from(records.values()).filter((r) => r.status === "active").map(recordToPublic);
+			},
+			get completed() {
+				return Array.from(records.values()).filter((r) => r.status === "complete").map(recordToPublic);
+			},
+			_tick(ctx) {
+				for (const record of records.values()) {
+					if (record.status !== "active") continue;
+					const ctxWithRecord = {
+						...ctx,
+						mission: record
+					};
+					let result = false;
+					try {
+						result = record.evaluator(ctxWithRecord);
+					} catch (err) {
+						console.warn(`[missions] Evaluator for "${record.id}" threw:`, err);
+					}
+					if (result) completeRecord(record, ctx.turn);
+				}
+			}
+		};
+	}
+	//#endregion
 	//#region src/lib/api/createGame.ts
 	function toPublicRoom(id, info) {
 		return {
@@ -2392,6 +2459,7 @@ var CrawlLib = (function(exports, three) {
 			facing: 0,
 			inventory: []
 		};
+		const missionsHandle = createMissionSystem(events, options.transport);
 		const internal = {
 			options,
 			canvas,
@@ -2414,6 +2482,7 @@ var CrawlLib = (function(exports, three) {
 			decoratorCb: null,
 			surfacePainterCb: null,
 			keybindingsHandles: [],
+			missions: missionsHandle,
 			destroyed: false
 		};
 		let dungeonHandle;
@@ -2421,40 +2490,60 @@ var CrawlLib = (function(exports, three) {
 		let generated = false;
 		dungeonHandle = makeDungeonHandle(internal);
 		turnsHandle = makeTurnsHandle(internal, dungeonHandle);
-		if (options.transport) options.transport.onStateUpdate((update) => {
+		events.on("turn", ({ turn }) => {
 			if (internal.destroyed) return;
-			if (internal.turnState) {
-				let actors = { ...internal.turnState.actors };
-				for (const [pid, ps] of Object.entries(update.players)) {
-					const actor = actors[pid];
-					if (actor) actors[pid] = {
-						...actor,
-						x: ps.x,
-						y: ps.y,
-						hp: ps.hp,
-						alive: ps.alive
+			missionsHandle._tick({
+				turn,
+				player: internal.playerHandle,
+				dungeon: dungeonHandle,
+				events,
+				mission: null
+			});
+		});
+		if (options.transport) {
+			options.transport.onStateUpdate((update) => {
+				if (internal.destroyed) return;
+				if (internal.turnState) {
+					let actors = { ...internal.turnState.actors };
+					for (const [pid, ps] of Object.entries(update.players)) {
+						const actor = actors[pid];
+						if (actor) actors[pid] = {
+							...actor,
+							x: ps.x,
+							y: ps.y,
+							hp: ps.hp,
+							alive: ps.alive
+						};
+					}
+					internal.turnState = {
+						...internal.turnState,
+						actors,
+						awaitingPlayerInput: true
 					};
 				}
-				internal.turnState = {
-					...internal.turnState,
-					actors,
-					awaitingPlayerInput: true
-				};
-			}
-			const myState = update.players[internal.playerActorId];
-			if (myState) {
-				internal.playerState.entity.x = myState.x;
-				internal.playerState.entity.z = myState.y;
-				internal.playerState.entity.hp = myState.hp;
-				internal.playerState.entity.alive = myState.alive;
-				if (myState.facing !== void 0) internal.playerState.facing = myState.facing;
-			}
-			syncAllEntitiesFromTurnState(internal);
-			internal.turnCounter = update.turn;
-			internal.events.emit("turn", { turn: update.turn });
-			internal.events.emit("network-state", update);
-			updateFovAndMinimap(internal);
-		});
+				const myState = update.players[internal.playerActorId];
+				if (myState) {
+					internal.playerState.entity.x = myState.x;
+					internal.playerState.entity.z = myState.y;
+					internal.playerState.entity.hp = myState.hp;
+					internal.playerState.entity.alive = myState.alive;
+					if (myState.facing !== void 0) internal.playerState.facing = myState.facing;
+				}
+				syncAllEntitiesFromTurnState(internal);
+				internal.turnCounter = update.turn;
+				internal.events.emit("turn", { turn: update.turn });
+				internal.events.emit("network-state", update);
+				updateFovAndMinimap(internal);
+			});
+			options.transport.onMissionComplete?.((msg) => {
+				if (internal.destroyed) return;
+				internal.events.emit("mission-peer-complete", {
+					missionId: msg.missionId,
+					name: msg.name,
+					playerId: msg.playerId
+				});
+			});
+		}
 		const game = {
 			get player() {
 				return internal.playerHandle;
@@ -2470,6 +2559,9 @@ var CrawlLib = (function(exports, three) {
 			},
 			get combat() {
 				return { factions: internal.factions };
+			},
+			get missions() {
+				return internal.missions;
 			},
 			generate() {
 				if (generated) return;
@@ -3308,6 +3400,7 @@ void main() {
 		let _playerId = null;
 		const updateHandlers = [];
 		const chatHandlers = [];
+		const missionCompleteHandlers = [];
 		function dispatch(raw) {
 			let msg;
 			try {
@@ -3325,6 +3418,14 @@ void main() {
 					text: msg.text
 				};
 				for (const h of chatHandlers) h(payload);
+			}
+			if (msg.type === "mission_complete") {
+				const payload = {
+					playerId: msg.playerId,
+					missionId: msg.missionId,
+					name: msg.name
+				};
+				for (const h of missionCompleteHandlers) h(payload);
 			}
 		}
 		return {
@@ -3394,6 +3495,17 @@ void main() {
 			},
 			onChat(handler) {
 				chatHandlers.push(handler);
+			},
+			sendMissionComplete(missionId, name) {
+				if (!ws || !_playerId) return;
+				ws.send(JSON.stringify({
+					type: "mission_complete",
+					missionId,
+					name
+				}));
+			},
+			onMissionComplete(handler) {
+				missionCompleteHandlers.push(handler);
 			}
 		};
 	}

@@ -37,6 +37,8 @@ import { createKeybindings } from "./keybindings";
 import type { KeybindingsOptions, KeybindingsHandle } from "./keybindings";
 import { makeRng } from "../utils/rng"
 import type { ActionTransport } from "../transport/types";
+import { createMissionSystem } from "../missions/missionSystem";
+import type { MissionsHandle } from "../missions/types";
 
 // ---------------------------------------------------------------------------
 // Public room shape (player-facing subset of RoomInfo)
@@ -222,6 +224,8 @@ export type GameHandle = {
   dungeon: DungeonHandle;
   events: EventEmitter;
   combat: CombatHandle;
+  /** Mission/quest system. Add evaluator-driven missions that auto-complete each turn. */
+  missions: MissionsHandle;
   /** Generate the dungeon and start the game. Call after attaching all callbacks. */
   generate(): void;
   /**
@@ -303,6 +307,9 @@ type GameInternal = {
   decoratorCb: DecoratorCallback | null;
   surfacePainterCb: SurfacePainterCallback | null;
   keybindingsHandles: KeybindingsHandle[];
+
+  // Missions
+  missions: MissionsHandle;
 
   // Cleanup
   destroyed: boolean;
@@ -1121,6 +1128,8 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
     inventory: [],
   };
 
+  const missionsHandle = createMissionSystem(events, options.transport);
+
   const internal: GameInternal = {
     options,
     canvas,
@@ -1143,6 +1152,7 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
     decoratorCb: null,
     surfacePainterCb: null,
     keybindingsHandles: [],
+    missions: missionsHandle,
     destroyed: false,
   };
 
@@ -1152,6 +1162,20 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
 
   dungeonHandle = makeDungeonHandle(internal);
   turnsHandle = makeTurnsHandle(internal, dungeonHandle);
+
+  // Wire mission tick to the turn event. Runs after every turn (local and
+  // networked) so active missions are evaluated against the latest game state.
+  events.on("turn", ({ turn }) => {
+    if (internal.destroyed) return;
+    missionsHandle._tick({
+      turn,
+      player: internal.playerHandle,
+      dungeon: dungeonHandle,
+      events,
+      // mission is set per-record inside _tick; this placeholder is overwritten
+      mission: null as never,
+    });
+  });
 
   // Wire transport reconciliation. Runs on every server state broadcast and
   // patches canonical positions/hp into the local turn state, then re-emits
@@ -1194,6 +1218,17 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
       internal.events.emit("network-state" as Parameters<typeof internal.events.emit>[0], update as never);
       updateFovAndMinimap(internal);
     });
+
+    // When a peer completes a mission the server broadcasts mission_complete.
+    // Translate that into the local mission-peer-complete event.
+    options.transport.onMissionComplete?.((msg) => {
+      if (internal.destroyed) return;
+      internal.events.emit("mission-peer-complete", {
+        missionId: msg.missionId,
+        name: msg.name,
+        playerId: msg.playerId,
+      });
+    });
   }
 
   const game: GameHandle = {
@@ -1204,6 +1239,7 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
     get combat() {
       return { factions: internal.factions };
     },
+    get missions() { return internal.missions; },
 
     generate() {
       if (generated) return;

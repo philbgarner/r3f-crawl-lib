@@ -56,6 +56,9 @@ src/lib/
     player.ts
     actions.ts
     keybindings.ts
+  missions/
+    types.ts
+    missionSystem.ts
   transport/
     types.ts
     websocket.ts
@@ -222,7 +225,7 @@ src/lib/
 ### Event system
 
 **Files:**
-- `events/eventEmitter.ts` — typed `EventEmitter` with `on`, `off`, `emit`; `GameEventMap` covering `damage`, `death`, `xp-gain`, `heal`, `miss`, `chest-open`, `item-pickup`, `turn`, `win`, `lose`, `audio`
+- `events/eventEmitter.ts` — typed `EventEmitter` with `on`, `off`, `emit`; `GameEventMap` covering `damage`, `death`, `xp-gain`, `heal`, `miss`, `chest-open`, `item-pickup`, `turn`, `win`, `lose`, `audio`, `mission-complete`, `mission-peer-complete`
 - All internal modules (`combat`, `inventory`, `passages`, `turn`) receive the emitter at construction time
 
 ---
@@ -237,6 +240,20 @@ src/lib/
 - `utils/rng.ts` — `makeRng(seed)` seeded PRNG
 - `utils/geometry.ts` — `hasLineOfSight`, `cardinalDir`, `normalizeUvRect`, `MinHeap<T>`, `octile()`
 - `utils/minimap.ts` — explored mask state and minimap canvas rendering
+
+---
+
+### Mission / quest system
+
+Evaluator-driven mission system that hooks into the turn loop. The developer registers missions with `game.missions.add()`, providing an evaluator callback and an optional `onComplete` callback. The evaluator is called once per turn for every active mission; returning `true` marks the mission complete. Completion emits a `mission-complete` event on the game event emitter and calls `onComplete` synchronously. In multiplayer sessions the completion is broadcast to all peers via the transport, causing each peer to emit a `mission-peer-complete` event. Single-player games are completely unaffected — the transport path is gated behind optional interface methods.
+
+**Files:**
+- `missions/types.ts` — `Mission`, `MissionStatus`, `MissionContext`, `MissionEvaluator`, `MissionCompleteCallback`, `MissionDef`, `MissionsHandle`
+- `missions/missionSystem.ts` — `createMissionSystem(events, transport)` factory; internal mutable `MissionRecord` map, per-turn `_tick()` evaluator loop, completion sequencing (event → callback → transport broadcast)
+- `events/eventEmitter.ts` — `mission-complete` and `mission-peer-complete` entries in `GameEventMap`
+- `transport/types.ts` — optional `sendMissionComplete()` and `onMissionComplete()` methods on `ActionTransport`
+- `transport/websocket.ts` — sends `{ type: 'mission_complete', missionId, name }` client→server; receives and routes the server broadcast to registered `onMissionComplete` handlers
+- `api/createGame.ts` — instantiates mission system, wires `_tick` to the `turn` event, wires `onMissionComplete` to emit `mission-peer-complete`, exposes `game.missions`
 
 ---
 
