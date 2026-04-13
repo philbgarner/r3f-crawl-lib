@@ -18,11 +18,12 @@ Game logic lives entirely in your JS layer — the library provides the renderin
   - [Listening to game events](#listening-to-game-events)
   - [Adding entities at runtime](#adding-entities-at-runtime)
   - [3D Renderer](#3d-renderer)
+  - [Surface painting callback](#surface-painting-callback)
+  - [Layer system vs. surface painting](#layer-system-vs-surface-painting)
   - [Loading a Tiled map](#loading-a-tiled-map)
   - [HUD overlay with plain HTML](#hud-overlay-with-plain-html)
   - [Spawn callback](#spawn-callback)
   - [Decoration callback](#decoration-callback)
-  - [Surface painting callback](#surface-painting-callback)
   - [Keybindings helper](#keybindings-helper)
   - [Script tag API surface](#script-tag-api-surface)
 - [Core Concepts](#core-concepts)
@@ -40,13 +41,14 @@ Game logic lives entirely in your JS layer — the library provides the renderin
     - [Active Effects](#active-effects)
     - [Spawn Callback](#spawn-callback-1)
   - [Decorations](#decorations)
-  - [Surface Painting](#surface-painting)
   - [Combat](#combat)
   - [Items & Inventory](#items--inventory)
   - [Hidden Passages](#hidden-passages)
   - [3D Renderer](#3d-renderer-1)
     - [Per-direction Tile Specs](#per-direction-tile-specs)
     - [Layer System](#layer-system)
+    - [Surface Painting](#surface-painting)
+    - [Layer System vs. Surface Painting](#layer-system-vs-surface-painting-1)
   - [Keybindings](#keybindings)
   - [Audio](#audio)
   - [Events](#events)
@@ -360,6 +362,41 @@ atlasImg.src = './atlas.png'
 | `renderer.setEntities(entities)` | Pass the current live entity list; call on every `'turn'` event |
 | `renderer.destroy()` | Unmount the canvas and release all Three.js resources |
 
+### Surface painting callback
+
+Register a callback to paint atlas tile layers onto tiles per position. Return an ordered array of atlas tile IDs to composite over the base tile, or `null` to leave it unchanged.
+
+```js
+CrawlLib.attachSurfacePainter(game, {
+  onPaint: function({ dungeon, roomId, x, y }) {
+    var room = dungeon.rooms[roomId]
+    if (!room) return null
+
+    if (Math.abs(x - room.cx) + Math.abs(y - room.cz) <= 1) {
+      return ['wet-overlay']
+    }
+
+    return null
+  },
+})
+```
+
+### Layer system vs. surface painting
+
+Both add visual detail on top of the base atlas tiles, but they operate at different layers of the stack.
+
+| | `renderer.addLayer` | `attachSurfacePainter` / `dungeon.paint` |
+|---|---|---|
+| **Where it lives** | Renderer — instanced meshes on top of geometry | Dungeon — tile data stored per-cell |
+| **Driven by** | Per-face renderer callback | Per-position dungeon callback or imperative call |
+| **Serialized with dungeon** | No | Yes (via `dungeon.paint`) |
+| **Best for** | Visual overlays (decals, glows, trim) wired to renderer-side flags | Tile state tied to dungeon data (biomes, wear, wetness) |
+| **Update path** | `handle.rebuild()` after state changes | `game.dungeon.paint()` / `game.dungeon.unpaint()` |
+
+**Use `addLayer`** when the overlay is purely visual and the renderer decides what to show on a per-face basis — for example, blood-splatter decals driven by a `cell.hasBlood` flag, or trim meshes along every north wall.
+
+**Use `attachSurfacePainter`** (or `dungeon.paint`) when the overlay represents dungeon *state* — for example, wet tiles, moss growth, or biome zones — especially when that state needs to survive serialization or be shared over the network.
+
 ### Loading a Tiled map
 
 ```js
@@ -500,25 +537,6 @@ CrawlLib.attachDecorator(game, {
         sprite:     'barrel',
         blocksMove: true,
       })
-    }
-
-    return null
-  },
-})
-```
-
-### Surface painting callback
-
-Register a callback to paint atlas tile layers onto tiles per position. Return an ordered array of atlas tile IDs to composite over the base tile, or `null` to leave it unchanged.
-
-```js
-CrawlLib.attachSurfacePainter(game, {
-  onPaint: function({ dungeon, roomId, x, y }) {
-    var room = dungeon.rooms[roomId]
-    if (!room) return null
-
-    if (Math.abs(x - room.cx) + Math.abs(y - room.cz) <= 1) {
-      return ['wet-overlay']
     }
 
     return null
@@ -1031,32 +1049,6 @@ game.dungeon.decorations.list   // DecorationEntity[]
 
 ---
 
-### Surface Painting
-
-Each tile position can have an ordered stack of atlas tile IDs composited over the base generated tile. Use `attachSurfacePainter` to drive painting from a per-tile callback, or paint imperatively via `game.dungeon.paint()`.
-
-```js
-CrawlLib.attachSurfacePainter(game, {
-  onPaint: function({ dungeon, roomId, x, y }) {
-    var room = dungeon.rooms[roomId]
-    if (!room) return null
-
-    // Puddle near room centre
-    if (Math.abs(x - room.cx) + Math.abs(y - room.cz) <= 1) {
-      return ['wet-overlay']
-    }
-
-    return null
-  },
-})
-
-// Imperative painting (replaces any previous paint at that position)
-game.dungeon.paint(x, z, ['moss-overlay', 'crack-overlay'])
-game.dungeon.unpaint(x, z)
-```
-
----
-
 ### Combat
 
 The library uses three factions. Enemies are hostile to everyone; NPCs and the player fight back only against enemies.
@@ -1250,6 +1242,50 @@ handle.rebuild()
 | `tileId` | number | Atlas tile index to render on this layer |
 | `yOffset` | number | World-unit Y offset (useful to prevent z-fighting) |
 | `filter` | function | Per-face callback — return `{ visible: true }` or `null` |
+
+---
+
+### Surface Painting
+
+Each tile position can have an ordered stack of atlas tile IDs composited over the base generated tile. Use `attachSurfacePainter` to drive painting from a per-tile callback, or paint imperatively via `game.dungeon.paint()`.
+
+```js
+CrawlLib.attachSurfacePainter(game, {
+  onPaint: function({ dungeon, roomId, x, y }) {
+    var room = dungeon.rooms[roomId]
+    if (!room) return null
+
+    // Puddle near room centre
+    if (Math.abs(x - room.cx) + Math.abs(y - room.cz) <= 1) {
+      return ['wet-overlay']
+    }
+
+    return null
+  },
+})
+
+// Imperative painting (replaces any previous paint at that position)
+game.dungeon.paint(x, z, ['moss-overlay', 'crack-overlay'])
+game.dungeon.unpaint(x, z)
+```
+
+---
+
+### Layer System vs. Surface Painting
+
+Both add visual detail on top of the base atlas tiles, but they operate at different layers of the stack.
+
+| | Layer System (`addLayer`) | Surface Painting (`attachSurfacePainter` / `dungeon.paint`) |
+|---|---|---|
+| **Where it lives** | Renderer — instanced meshes on top of geometry | Dungeon — tile data stored per-cell |
+| **Driven by** | Per-face renderer callback | Per-position dungeon callback or imperative call |
+| **Serialized with dungeon** | No | Yes (via `dungeon.paint`) |
+| **Best for** | Visual overlays (decals, glows, trim) wired to renderer-side flags | Tile state tied to dungeon data (biomes, wear, wetness) |
+| **Update path** | `handle.rebuild()` after state changes | `game.dungeon.paint()` / `game.dungeon.unpaint()` |
+
+**Use `addLayer`** when the overlay is purely visual and the renderer decides what to show on a per-face basis — for example, blood-splatter decals driven by a `cell.hasBlood` flag, or trim meshes along every north wall.
+
+**Use `attachSurfacePainter`** (or `dungeon.paint`) when the overlay represents dungeon *state* — for example, wet tiles, moss growth, or biome zones — especially when that state needs to survive serialization or be shared over the network.
 
 ---
 
