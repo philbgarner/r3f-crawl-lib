@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+:root {
+  --gold: #f0c040;
+  --gold-dim: #a07820;
+  --bg: #0a0a1a;
+  --panel: #10102a;
+  --border: #304080;
+  --text: #c8d0f8;
+  --desc: #8090c0;
+  --damage: #f66;
+  --death: #f99;
+  --audio: #69f;
+  --muted: #404060;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  display: flex;
+  height: 100vh;
+  image-rendering: pixelated;
+}
+
+/* Starfield background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, #fff 0%, transparent 100%),
+    radial-gradient(1px 1px at 30% 60%, #aaf 0%, transparent 100%),
+    radial-gradient(1px 1px at 50% 10%, #fff 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 80%, #ccf 0%, transparent 100%),
+    radial-gradient(1px 1px at 85% 35%, #fff 0%, transparent 100%),
+    radial-gradient(1px 1px at 15% 75%, #aaf 0%, transparent 100%),
+    radial-gradient(1px 1px at 60% 50%, #fff 0%, transparent 100%),
+    radial-gradient(1px 1px at 92% 15%, #ccf 0%, transparent 100%),
+    radial-gradient(1px 1px at 45% 90%, #fff 0%, transparent 100%),
+    radial-gradient(1px 1px at 5%  45%, #aaf 0%, transparent 100%);
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  padding: 20px 16px;
+  background: var(--panel);
+  border-right: 3px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+  box-shadow: inset 0 0 0 1px #000, 0 0 24px rgba(48, 64, 128, 0.4);
+}
+
+/* Corner decorations */
+#sidebar::before,
+#sidebar::after {
+  content: '+';
+  position: absolute;
+  color: var(--gold-dim);
+  font-size: 10px;
+  line-height: 1;
+}
+#sidebar::before { top: 6px; left: 10px; }
+#sidebar::after  { bottom: 6px; right: 10px; }
+
+#sidebar h1 {
+  font-size: 9px;
+  color: var(--gold);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px var(--gold-dim), 1px 1px 0 #000;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+#log {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 8px;
+  line-height: 1.9;
+  color: var(--desc);
+}
+
+#log .entry         { padding: 2px 0; border-bottom: 1px solid #1a1a3a; }
+#log .entry.damage  { color: var(--damage); }
+#log .entry.death   { color: var(--death); font-weight: bold; }
+#log .entry.audio   { color: var(--audio); }
+#log .entry.turn    { color: var(--muted); }
+
+#stats {
+  font-size: 9px;
+  line-height: 2.2;
+  color: var(--desc);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+#stats span {
+  color: var(--gold);
+  font-weight: bold;
+}
+
+#controls {
+  font-size: 8px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  line-height: 2.2;
+}
+
+#canvas-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+#viewport {
+  width: 100%;
+  height: 100%;
+}
+
+/* Minimap overlay — bottom-right corner of the viewport */
+#minimap {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: 196px;
+  height: 196px;
+  border: 2px solid var(--border);
+  background: #000;
+  box-shadow: 0 0 0 1px #000, 0 0 12px rgba(0, 0, 0, 0.8);
+  image-rendering: pixelated;
+  z-index: 10;
+  pointer-events: none;
+}
