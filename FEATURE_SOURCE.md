@@ -277,6 +277,17 @@ Dependency-injection layer that makes the server authoritative for all player ac
 
 ---
 
+### Tutorial / mission example
+
+Demonstrates the mission system end-to-end with two chained tutorial missions. Mission 1 ("First Steps") tracks actual grid moves via the `metadata` bag across turns. Mission 2 ("Into the Dark") is registered inside mission 1's `onComplete`, uses `game.dungeon.outputs.startRoomId` plus `game.dungeon.rooms` to identify corridors adjacent to the start room, and completes when the player steps into one of them. Shows: `missions.add`, evaluator pattern, metadata accumulation, mission chaining via `onComplete`, `mission-complete` event subscription, and banner + log UI feedback.
+
+**Files:**
+- `examples/tutorial/index.html`
+- `examples/tutorial/styles.css`
+- `examples/tutorial/tutorial.js`
+
+---
+
 ### Public API surface
 
 **Files:**

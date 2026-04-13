@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>r3f-crawl-lib — Tutorial Example</title>
+  <link rel="stylesheet" href="/examples/tutorial/styles.css" />
+</head>
+<body>
+  <div id="sidebar">
+    <h1>Tutorial</h1>
+
+    <div id="stats">
+      HP: <span id="hp">—</span><br>
+      Turn: <span id="turn">0</span><br>
+      Pos: <span id="pos">—</span>
+    </div>
+
+    <div id="missions-panel">
+      <div id="missions-title">Missions</div>
+      <div id="missions-list"></div>
+    </div>
+
+    <div id="log"></div>
+
+    <div id="controls">
+      WASD / Arrow keys — move<br>
+      Q / E — turn left / right<br>
+      Space — wait
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <div id="viewport"></div>
+  </div>
+
+  <!-- mission-complete banner (hidden until triggered) -->
+  <div id="banner" aria-live="polite"></div>
+
+  <script type="module">
+    import * as THREE from '/node_modules/three/build/three.module.js';
+    window.THREE = THREE;
+  </script>
+  <script src="/dist/r3f-crawl-lib.iife.js" defer></script>
+  <script src="/examples/tutorial/tutorial.js" defer></script>
+</body>
+</html>
