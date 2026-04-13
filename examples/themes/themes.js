@@ -1,15 +1,10 @@
 // themes.js — r3f-crawl-lib themes example
 //
-// Demonstrates per-room theming using ThemeSelector:
-//   single   — all rooms share one named theme
-//   list     — uniform random pick from a list of theme names
-//   weighted — weighted random pick (e.g. dungeon appears 3× as often as ruins)
-//   callback — full control; theme key returned per-room based on any logic
+// Demonstrates per-room theming: press TAB to cycle through theme types.
+// All rooms share the active theme. The seed is fixed so the layout stays the same.
 //
 // Each theme maps to floor/wall/ceiling tile IDs in atlas.png.
 // Layers (addLayer) apply per-room tile overrides on top of the corridor base.
-//
-// Press T to cycle selector modes. The seed is fixed so the layout stays the same.
 
 const {
   createGame,
@@ -17,8 +12,6 @@ const {
   attachMinimap,
   createDungeonRenderer,
   resolveTheme,
-  THEMES,
-  THEME_KEYS,
   registerTheme,
 } = CrawlLib;
 
@@ -46,23 +39,32 @@ const FLOOR_IDS = {
   Cobblestone: 19, // uv [192, 128]
   Flagstone: 20, // uv [256, 128]
   Concrete: 22, // uv [384, 128]
-  Steel: 29, // uv [320, 192]
+  Tile: 29, // uv [320, 192]
   Dirt: 38, // uv [384, 256]
+  DiamondTile: 45,
+  Grate: 46,
+  WoodFloor: 6,
+  ParkayFloor: 4,
 };
 
 const WALL_IDS = {
+  MetalPanel: 55,
+  MetalWall: 63,
+  ReinforcedWall: 7,
   Cobblestone: 19, // uv [192, 128]
   Brick: 16, // uv [0,   128]
   Concrete: 22, // uv [384, 128]
   Plaster: 31, // uv [448, 192]
   Dirt: 38, // uv [384, 256]
+  WoodWall: 5,
+  Grate: 46,
 };
 
 const CEIL_IDS = {
   Cobblestone: 19, // uv [192, 128]
   Flagstone: 20, // uv [256, 128]
   Concrete: 22, // uv [384, 128]
-  Steel: 29, // uv [320, 192]
+  Tile: 29, // uv [320, 192]
   Dirt: 38, // uv [384, 256]
 };
 
@@ -95,10 +97,21 @@ const THEME_PALETTES = {
     walls: [WALL_IDS.Dirt, WALL_IDS.Cobblestone, WALL_IDS.Brick],
     ceils: [CEIL_IDS.Dirt, CEIL_IDS.Concrete, CEIL_IDS.Cobblestone],
   },
+  domestic: {
+    floors: [FLOOR_IDS.ParkayFloor, FLOOR_IDS.WoodFloor, FLOOR_IDS.DiamondTile],
+    walls: [WALL_IDS.Plaster, WALL_IDS.WoodWall],
+    ceils: [CEIL_IDS.Concrete, CEIL_IDS.Flagstone],
+  },
   industrial: {
-    floors: [FLOOR_IDS.Steel, FLOOR_IDS.Concrete],
-    walls: [WALL_IDS.Concrete, WALL_IDS.Brick],
-    ceils: [CEIL_IDS.Steel, CEIL_IDS.Concrete],
+    floors: [FLOOR_IDS.DiamondTile, FLOOR_IDS.Concrete, FLOOR_IDS.Tile],
+    walls: [
+      WALL_IDS.Concrete,
+      WALL_IDS.Brick,
+      WALL_IDS.Grate,
+      WALL_IDS.MetalWall,
+      WALL_IDS.ReinforcedWall,
+    ],
+    ceils: [CEIL_IDS.Concrete, CEIL_IDS.Tile],
   },
   ruins: {
     floors: [FLOOR_IDS.Cobblestone, FLOOR_IDS.Dirt, FLOOR_IDS.Flagstone],
@@ -117,6 +130,7 @@ const THEME_COLORS = {
   dungeon: "#a0a0b8",
   crypt: "#b060d0",
   catacomb: "#80b090",
+  domestic: "#f0f090",
   industrial: "#60a0c0",
   ruins: "#c08040",
   void: "#606080",
@@ -131,12 +145,9 @@ function tileIdsFor(def) {
 }
 
 // ---------------------------------------------------------------------------
-// Seeded rng — xorshift32, used to give each room a deterministic theme.
 // cellHash — fast integer hash for deterministic per-cell tile selection.
+// Returns a uint32 stable for a given (cx, cz, seed) triple.
 // ---------------------------------------------------------------------------
-
-// Returns a uint32 in [0, 0xFFFFFFFF] stable for a given (cx, cz, seed) triple.
-// Use with % array.length to pick an index — safer than float multiplication.
 function cellHash(cx, cz, seed) {
   let h = ((cx * 1619 + cz * 31337) ^ (seed * 1000003)) >>> 0;
   h ^= h >>> 16;
@@ -145,57 +156,12 @@ function cellHash(cx, cz, seed) {
   return h >>> 0;
 }
 
-function makeRng(seed) {
-  let s = (seed ^ 0x9e3779b9) >>> 0 || 1;
-  return () => {
-    s ^= s << 13;
-    s = s >>> 0;
-    s ^= s >> 17;
-    s ^= s << 5;
-    s = s >>> 0;
-    return s / 0x100000000;
-  };
-}
-
 // ---------------------------------------------------------------------------
-// Selector modes
+// Theme cycle — TAB steps through these in order
 // ---------------------------------------------------------------------------
 
-const SELECTOR_DEFS = {
-  // All rooms share a single theme.
-  single: "crypt",
-
-  // Uniform random pick — each room independently draws from this list.
-  list: ["dungeon", "crypt", "ruins", "catacomb", "industrial"],
-
-  // Weighted random — dungeon and ruins appear more often than void.
-  weighted: [
-    ["dungeon", 3],
-    ["crypt", 2],
-    ["ruins", 2],
-    ["catacomb", 1],
-    ["industrial", 1],
-    ["void", 1],
-  ],
-
-  // Callback — full control: start room is always "dungeon", others alternate.
-  callback: ({ roomId, rng }) => {
-    if (roomId === 1) return "dungeon";
-    const options = ["crypt", "industrial", "ruins", "catacomb"];
-    return options[Math.floor(rng() * options.length)];
-  },
-};
-
-const SELECTOR_LABELS = {
-  single: 'single  — "crypt"',
-  list: "list    — uniform random",
-  weighted: "weighted — dungeon/ruins favoured",
-  callback: "callback — start=dungeon, rest random",
-};
-
-const SELECTOR_KEYS = Object.keys(SELECTOR_DEFS);
-let selectorKeyIdx = 2; // start on weighted
-let selectorKey = SELECTOR_KEYS[selectorKeyIdx];
+const THEME_CYCLE = ["dungeon", "crypt", "catacomb", "domestic", "industrial", "ruins", "void"];
+let themeIdx = 0;
 
 // ---------------------------------------------------------------------------
 // Room → theme map, built once per generate()
@@ -211,7 +177,7 @@ function buildRoomMap(outputs) {
 
   const { width, height, textures } = outputs;
   const regionId = textures.regionId.image.data;
-  const selector = SELECTOR_DEFS[selectorKey];
+  const themeName = THEME_CYCLE[themeIdx];
   const seen = new Set();
 
   for (let i = 0; i < width * height; i++) {
@@ -219,20 +185,8 @@ function buildRoomMap(outputs) {
     if (rid === 0 || seen.has(rid)) continue;
     seen.add(rid);
 
-    // Give each room a deterministic rng seeded on dungeon seed + room id.
-    const rng = makeRng(DUNGEON_SEED ^ (rid * 1000003));
-    const def = resolveTheme(selector, { roomId: rid, rng });
-    // Find the registered name that produced this def (for display).
-    const name =
-      [...THEME_KEYS, "void"].find((k) => {
-        const d = THEMES[k];
-        return (
-          d &&
-          d.floorType === def.floorType &&
-          d.wallType === def.wallType &&
-          d.ceilingType === def.ceilingType
-        );
-      }) ?? "custom";
+    const def = resolveTheme(themeName, {});
+    const name = themeName;
     const ids = tileIdsFor(def);
     const palette = THEME_PALETTES[name] ?? {
       floors: [ids.floor],
@@ -441,16 +395,16 @@ attachKeybindings(game, {
   },
 });
 
-// T — cycle selector modes (same layout each time, fixed seed).
+// TAB — cycle through theme types (same layout each time, fixed seed).
 document.addEventListener("keydown", (e) => {
-  if (e.key === "t" || e.key === "T") {
-    selectorKeyIdx = (selectorKeyIdx + 1) % SELECTOR_KEYS.length;
-    selectorKey = SELECTOR_KEYS[selectorKeyIdx];
-    selectorEl.textContent = SELECTOR_LABELS[selectorKey];
+  if (e.key === "Tab") {
+    e.preventDefault();
+    themeIdx = (themeIdx + 1) % THEME_CYCLE.length;
+    selectorEl.textContent = THEME_CYCLE[themeIdx];
     roomMapBuilt = false;
     if (renderer) renderer.rebuild();
     game.regenerate();
-    addLog(`Selector: ${selectorKey}`, "turn");
+    addLog(`Theme: ${THEME_CYCLE[themeIdx]}`, "turn");
   }
 });
 
