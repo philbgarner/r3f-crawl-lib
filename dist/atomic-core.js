@@ -3488,4 +3488,4 @@ function createWebSocketTransport(url) {
 //#endregion
 export { THEMES, THEME_KEYS, attachDecorator, attachKeybindings, attachMinimap, attachSpawner, attachSurfacePainter, createDecoration, createDungeonRenderer, createEnemy, createGame, createItem, createNpc, createWebSocketTransport, getTheme, loadTiledMap, registerTheme, resolveTheme };
 
-//# sourceMappingURL=r3f-crawl-lib.js.map
+//# sourceMappingURL=atomic-core.js.map

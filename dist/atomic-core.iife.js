@@ -1,4 +1,4 @@
-var CrawlLib = (function(exports, three) {
+var AtomicCore = (function(exports, three) {
 	Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 	//#region \0rolldown/runtime.js
 	var __create = Object.create;
@@ -3531,4 +3531,4 @@ void main() {
 	return exports;
 })({}, THREE);
 
-//# sourceMappingURL=r3f-crawl-lib.iife.js.map
+//# sourceMappingURL=atomic-core.iife.js.map

@@ -1,5 +1,5 @@
 (function(global, factory) {
-	typeof exports === "object" && typeof module !== "undefined" ? factory(exports, require("three")) : typeof define === "function" && define.amd ? define(["exports", "three"], factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, factory(global.CrawlLib = {}, global.THREE));
+	typeof exports === "object" && typeof module !== "undefined" ? factory(exports, require("three")) : typeof define === "function" && define.amd ? define(["exports", "three"], factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, factory(global.AtomicCore = {}, global.THREE));
 })(this, function(exports, three) {
 	Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 	//#region \0rolldown/runtime.js
@@ -3532,4 +3532,4 @@ void main() {
 	exports.resolveTheme = resolveTheme;
 });
 
-//# sourceMappingURL=r3f-crawl-lib.umd.cjs.map
+//# sourceMappingURL=atomic-core.umd.cjs.map
