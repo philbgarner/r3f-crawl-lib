@@ -1,17 +1,18 @@
 {
-  "name": "r3f-crawl-lib",
+  "name": "atomic-core",
   "version": "0.1.0",
   "description": "Composable first-person dungeon crawl library for React Three Fiber",
   "type": "module",
-  "main": "dist/r3f-crawl-lib.umd.js",
-  "module": "dist/r3f-crawl-lib.js",
+  "main": "dist/atomic-core.umd.cjs",
+  "module": "dist/atomic-core.js",
   "types": "dist/index.d.ts",
-  "browser": "dist/r3f-crawl-lib.iife.js",
+  "browser": "dist/atomic-core.iife.js",
+  "jsdelivr": "dist/atomic-core.iife.js",
   "exports": {
     ".": {
-      "browser": "./dist/r3f-crawl-lib.iife.js",
-      "import": "./dist/r3f-crawl-lib.js",
-      "require": "./dist/r3f-crawl-lib.umd.js",
+      "browser": "./dist/atomic-core.iife.js",
+      "import": "./dist/atomic-core.js",
+      "require": "./dist/atomic-core.umd.cjs",
       "types": "./dist/index.d.ts"
     }
   },

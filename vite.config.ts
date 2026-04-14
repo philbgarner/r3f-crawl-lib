@@ -15,8 +15,8 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/lib/index.ts'),
-      name: 'CrawlLib',
-      fileName: 'r3f-crawl-lib',
+      name: 'AtomicCore',
+      fileName: 'atomic-core',
       formats: ['es', 'umd', 'iife'],
     },
     rollupOptions: {
