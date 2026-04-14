@@ -1469,3 +1469,39 @@ Example layout for a 512×1024 sheet with 64×64 tiles (8 columns):
 | 20 | 2 | 4 | Flagstone floor |
 
 The renderer uses nearest-neighbour filtering and per-face UV clamping to prevent atlas bleed at tile edges.
+
+### Embedding the atlas as a Base64 data URL
+
+When serving examples directly from the filesystem (`file://`) or in sandboxed environments where external image fetches are blocked, you can embed the atlas image as a Base64 data URL in a plain JS file and load it with a `<script>` tag.
+
+Two helper scripts in `utils/` automate this conversion:
+
+**Linux / macOS (Bash):**
+```bash
+chmod +x utils/imageToBase64Js.sh
+./utils/imageToBase64Js.sh assets/atlas.png examples/basic/atlas-data.js
+```
+
+**Windows (PowerShell):**
+```powershell
+.\utils\image.ToBase64Js.ps1 assets\atlas.png examples\basic\atlas-data.js
+```
+
+Both scripts accept the image path as the first argument and the output JS path as the second. Running either script without arguments prints full usage help. The generated file assigns the data URL to `window.ATLAS_DATA_URL`:
+
+```js
+window.ATLAS_DATA_URL = "data:image/png;base64,iVBORw0K...";
+```
+
+Include it before your main script and use `ATLAS_DATA_URL` as the image `src`:
+
+```html
+<script src="atlas-data.js"></script>
+<script>
+  const atlasImg = new Image()
+  atlasImg.onload = function () {
+    var renderer = CrawlLib.createDungeonRenderer(el, game, { atlas: { image: atlasImg, ... }, ... })
+  }
+  atlasImg.src = window.ATLAS_DATA_URL
+</script>
+```

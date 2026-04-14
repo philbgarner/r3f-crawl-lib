@@ -1,4 +1,4 @@
-// tutorial.js — r3f-crawl-lib full tutorial example
+// tutorial.js — atomic-core full tutorial example
 //
 // Demonstrates all ten core systems through chained and parallel missions:
 //
@@ -26,7 +26,7 @@ const {
   attachMinimap,
   createItem,
   createDungeonRenderer,
-} = CrawlLib;
+} = AtomicCore;
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -39,6 +39,7 @@ const hpEl = document.getElementById("hp");
 const turnEl = document.getElementById("turn");
 const posEl = document.getElementById("pos");
 const missionsList = document.getElementById("missions-list");
+const missionsAnimatingEl = document.getElementById("missions-animating");
 const bannerEl = document.getElementById("banner");
 
 // ---------------------------------------------------------------------------
@@ -82,6 +83,10 @@ let _endRoom = null;
 
 /** Mission ids whose complete animation has already played; rendered hidden. */
 const _hiddenMissions = new Set();
+/** Mission ids whose complete animation is currently in progress → DOM element.
+ *  The element is reused across renderMissions() calls so the animation is
+ *  never interrupted and never restarts. */
+const _animatingElements = new Map();
 
 // ---------------------------------------------------------------------------
 // Create game
@@ -91,7 +96,7 @@ const game = createGame(document.body, {
   dungeon: {
     width: 48,
     height: 48,
-    seed: 0xdeadbeef,
+    seed: Math.floor(Math.random() * 0xffffffff),
     roomMinSize: 6,
     roomMaxSize: 12,
     roomCount: 10,
@@ -179,6 +184,8 @@ attachMinimap(game, minimapEl, {
 
 let renderer;
 
+// Use the preloaded base64 data URL (set by atlas-data.js) so WebGL can
+// upload the texture when running directly from file://.
 const atlasImg = new Image();
 atlasImg.onload = () => {
   renderer = createDungeonRenderer(viewportEl, game, {
@@ -209,7 +216,7 @@ atlasImg.onload = () => {
 
   setupTutorialMissions();
 };
-atlasImg.src = "/examples/basic/atlas.png";
+atlasImg.src = window.ATLAS_DATA_URL;
 
 // ---------------------------------------------------------------------------
 // Chest interaction helper
@@ -557,7 +564,6 @@ attachKeybindings(game, {
       addLog("You are dead. Refresh to restart.", "death");
       return;
     }
-
     function relativeMove(forward, strafe) {
       const yaw = game.player.facing;
       const fx = Math.round(-Math.sin(yaw));
@@ -667,7 +673,7 @@ function updateStats() {
 }
 
 function renderMissions() {
-  missionsList.innerHTML = "";
+  const fragment = document.createDocumentFragment();
 
   const all = [...game.missions.list].sort(
     (a, b) => (a.status === "complete") - (b.status === "complete"),
@@ -676,11 +682,15 @@ function renderMissions() {
     const empty = document.createElement("div");
     empty.style.cssText = "font-size:7px;color:var(--muted);padding:4px 0";
     empty.textContent = "No missions yet.";
-    missionsList.appendChild(empty);
+    fragment.appendChild(empty);
+    missionsList.replaceChildren(fragment);
     return;
   }
 
   for (const mission of all) {
+    // Animating missions live in #missions-animating — never touch them here.
+    if (_animatingElements.has(mission.id)) continue;
+
     const item = document.createElement("div");
     item.className = `mission-item ${mission.status}`;
 
@@ -688,14 +698,19 @@ function renderMissions() {
       if (_hiddenMissions.has(mission.id)) {
         item.classList.add("hidden");
       } else {
+        // First completion: move element to the animating container so the
+        // main list rebuild can never reach it again.
+        _animatingElements.set(mission.id, item);
         item.addEventListener(
           "animationend",
           () => {
+            _animatingElements.delete(mission.id);
             _hiddenMissions.add(mission.id);
-            item.classList.add("hidden");
+            item.remove();
           },
           { once: true },
         );
+        // Build icon/body below, then append to animating container, not fragment.
       }
     }
 
@@ -737,8 +752,14 @@ function renderMissions() {
     body.appendChild(desc);
     item.appendChild(icon);
     item.appendChild(body);
-    missionsList.appendChild(item);
+    if (_animatingElements.get(mission.id) === item) {
+      missionsAnimatingEl.appendChild(item);
+    } else {
+      fragment.appendChild(item);
+    }
   }
+
+  missionsList.replaceChildren(fragment);
 }
 
 let _bannerTimer = null;

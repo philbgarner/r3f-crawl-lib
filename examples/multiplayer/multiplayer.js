@@ -1,4 +1,4 @@
-// multiplayer.js — r3f-crawl-lib multiplayer example
+// multiplayer.js — atomic-core multiplayer example
 //
 // Compared to basic.js, the only differences are:
 //  1. Connect to the server first (async, before createGame).
@@ -17,7 +17,7 @@ const {
   attachKeybindings,
   createDungeonRenderer,
   createWebSocketTransport,
-} = CrawlLib;
+} = AtomicCore;
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -200,7 +200,7 @@ function startGame(transport, { playerId, isHost, dungeonConfig }) {
       });
     }
   };
-  atlasImg.src = '/examples/basic/atlas.png';
+  atlasImg.src = '../basic/atlas.png';
 
   // ── Spawner (host generates enemies; server syncs their positions) ────────
 

@@ -1,37 +1,41 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>r3f-crawl-lib — Basic Example</title>
-  <link rel="stylesheet" href="/examples/basic/styles.css" />
-</head>
-<body>
-  <div id="sidebar">
-    <h1>r3f-crawl-lib</h1>
-    <div id="stats">
-      HP: <span id="hp">—</span><br>
-      Turn: <span id="turn">0</span><br>
-      Pos: <span id="pos">—</span>
-    </div>
-    <div id="log"></div>
-    <div id="controls">
-      WASD / Arrow keys — move<br>
-      Q / E — turn left / right<br>
-      Space — wait
-    </div>
-  </div>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>atomic-core — Basic Example</title>
+        <link rel="stylesheet" href="./styles.css" />
+    </head>
+    <body>
+        <div id="sidebar">
+            <h1>atomic-core</h1>
+            <div id="stats">
+                HP: <span id="hp">—</span><br />
+                Turn: <span id="turn">0</span><br />
+                Pos: <span id="pos">—</span>
+            </div>
+            <div id="log"></div>
+            <div id="controls">
+                WASD / Arrow keys — move<br />
+                Q / E — turn left / right<br />
+                Space — wait
+            </div>
+        </div>
 
-  <div id="canvas-wrap">
-    <div id="viewport"></div>
-  </div>
+        <div id="canvas-wrap">
+            <div id="viewport"></div>
+        </div>
 
-  <!-- Expose THREE as a global from the local ESM build (UMD was removed in r160+) -->
-  <script type="module">
-    import * as THREE from '/node_modules/three/build/three.module.js';
-    window.THREE = THREE;
-  </script>
-  <script src="/dist/r3f-crawl-lib.iife.js" defer></script>
-  <script src="/examples/basic/basic.js" defer></script>
-</body>
+        <!-- Expose THREE as a global from the local ESM build (UMD was removed in r160+) -->
+        <script type="module">
+            import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js";
+            window.THREE = THREE;
+        </script>
+        <script src="./atlas-data.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/gh/philbgarner/atomic-core@v0.1.0/dist/atomic-core.iife.js"
+            defer
+        ></script>
+        <script src="./basic.js" defer></script>
+    </body>
 </html>

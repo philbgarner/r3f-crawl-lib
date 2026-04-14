@@ -241,6 +241,10 @@ src/lib/
 - `utils/geometry.ts` — `hasLineOfSight`, `cardinalDir`, `normalizeUvRect`, `MinHeap<T>`, `octile()`
 - `utils/minimap.ts` — explored mask state and minimap canvas rendering
 
+**Build-time scripts (in `utils/`):**
+- `utils/imageToBase64Js.sh` — Bash script: converts an image to a Base64 JS data-URL file (`window.ATLAS_DATA_URL = "data:..."`)
+- `utils/image.ToBase64Js.ps1` — PowerShell equivalent of the above, for Windows
+
 ---
 
 ### Mission / quest system

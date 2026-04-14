@@ -1,4 +1,4 @@
-// themes.js — r3f-crawl-lib themes example
+// themes.js — atomic-core themes example
 //
 // Demonstrates per-room theming: press TAB to cycle through theme types.
 // All rooms share the active theme. The seed is fixed so the layout stays the same.
@@ -13,7 +13,7 @@ const {
   createDungeonRenderer,
   resolveTheme,
   registerTheme,
-} = CrawlLib;
+} = AtomicCore;
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -266,6 +266,8 @@ game.events.on("turn", () => {
 
 let renderer;
 
+// Use the preloaded base64 data URL (set by atlas-data.js) so WebGL can
+// upload the texture when running directly from file://.
 const atlasImg = new Image();
 atlasImg.onload = () => {
   renderer = createDungeonRenderer(viewportEl, game, {
@@ -332,7 +334,7 @@ atlasImg.onload = () => {
 
   game.generate();
 };
-atlasImg.src = "/examples/basic/atlas.png";
+atlasImg.src = window.ATLAS_DATA_URL;
 
 // ---------------------------------------------------------------------------
 // Events

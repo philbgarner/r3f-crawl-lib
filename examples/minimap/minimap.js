@@ -1,4 +1,4 @@
-// minimap.js — r3f-crawl-lib minimap example
+// minimap.js — atomic-core minimap example
 // Extends the basic example with attachMinimap to render a 2D canvas minimap
 // overlaid in the bottom-right corner of the viewport. The minimap shows
 // explored cells (dim) and currently-visible cells (bright) around the player.
@@ -10,7 +10,7 @@ const {
   attachKeybindings,
   attachMinimap,
   createDungeonRenderer,
-} = CrawlLib;
+} = AtomicCore;
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -104,8 +104,8 @@ attachMinimap(game, minimapCanvas, {
 
 let renderer;
 
-// Load the atlas as a plain Image so the renderer's bundled Three.js creates
-// the WebGLTexture — avoids cross-instance mismatch with window.THREE.
+// Use the preloaded base64 data URL (set by atlas-data.js) so WebGL can
+// upload the texture when running directly from file://.
 const atlasImg = new Image();
 atlasImg.onload = () => {
   renderer = createDungeonRenderer(viewportEl, game, {
@@ -123,7 +123,7 @@ atlasImg.onload = () => {
   });
   game.generate();
 };
-atlasImg.src = "/examples/basic/atlas.png";
+atlasImg.src = window.ATLAS_DATA_URL;
 
 // ---------------------------------------------------------------------------
 // Spawn enemies — one per room, capped, skipping early rooms

@@ -1,4 +1,4 @@
-// layering.js — r3f-crawl-lib layering example
+// layering.js — atomic-core layering example
 //
 // Demonstrates ceiling and floor height offsets driven by the distanceToWall mask:
 //   - Ceiling rises toward the center of rooms (vaulted effect).
@@ -12,7 +12,7 @@
 //
 // One offset step = tileSize * 0.5 = 1.5 world units (default tileSize 3).
 
-const { createGame, attachKeybindings, createDungeonRenderer } = CrawlLib;
+const { createGame, attachKeybindings, createDungeonRenderer } = AtomicCore;
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -100,6 +100,8 @@ game.events.on("turn", () => {
 
 let renderer;
 
+// Use the preloaded base64 data URL (set by atlas-data.js) so WebGL can
+// upload the texture when running directly from file://.
 const atlasImg = new Image();
 atlasImg.onload = () => {
   renderer = createDungeonRenderer(viewportEl, game, {
@@ -189,7 +191,7 @@ atlasImg.onload = () => {
 
   game.generate();
 };
-atlasImg.src = "/examples/basic/atlas.png";
+atlasImg.src = window.ATLAS_DATA_URL;
 
 // ---------------------------------------------------------------------------
 // Events

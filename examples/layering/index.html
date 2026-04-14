@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>r3f-crawl-lib — Layering Example</title>
-  <link rel="stylesheet" href="/examples/basic/styles.css" />
+  <title>atomic-core — Layering Example</title>
+  <link rel="stylesheet" href="../basic/styles.css" />
 </head>
 <body>
   <div id="sidebar">
@@ -32,10 +32,11 @@
 
   <!-- Expose THREE as a global from the local ESM build -->
   <script type="module">
-    import * as THREE from '/node_modules/three/build/three.module.js';
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js';
     window.THREE = THREE;
   </script>
-  <script src="/dist/r3f-crawl-lib.iife.js" defer></script>
-  <script src="/examples/layering/layering.js" defer></script>
+  <script src="../basic/atlas-data.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/philbgarner/atomic-core@v0.1.0/dist/atomic-core.iife.js" defer></script>
+  <script src="./layering.js" defer></script>
 </body>
 </html>

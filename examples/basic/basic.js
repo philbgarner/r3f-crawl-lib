@@ -1,4 +1,4 @@
-// basic.js — r3f-crawl-lib 3D example
+// basic.js — atomic-core 3D example
 // Demonstrates dungeon generation, turn-based movement, combat events,
 // and first-person 3D rendering — no build step required.
 
@@ -8,7 +8,7 @@ const {
   attachSpawner,
   attachKeybindings,
   createDungeonRenderer,
-} = CrawlLib;
+} = AtomicCore;
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -78,8 +78,8 @@ const game = createGame(document.body, {
 
 let renderer;
 
-// Load the atlas as a plain Image so the renderer's bundled Three.js creates
-// the WebGLTexture — avoids cross-instance mismatch with window.THREE.
+// Use the preloaded base64 data URL (set by atlas-data.js) so WebGL can
+// upload the texture when running directly from file://.
 const atlasImg = new Image();
 atlasImg.onload = () => {
   renderer = createDungeonRenderer(viewportEl, game, {
@@ -97,7 +97,7 @@ atlasImg.onload = () => {
   });
   game.generate();
 };
-atlasImg.src = "/examples/basic/atlas.png";
+atlasImg.src = window.ATLAS_DATA_URL;
 
 // ---------------------------------------------------------------------------
 // Spawn enemies — one per room, capped, skipping early rooms

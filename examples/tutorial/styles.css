@@ -135,6 +135,12 @@ body::before {
   gap: 6px;
 }
 
+#missions-animating {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .mission-item {
   font-size: 7px;
   line-height: 1.7;
