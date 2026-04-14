@@ -80,6 +80,8 @@ let _visitedCells = new Set();
 
 /** The exit room (endRoomId → PublicRoom), captured in onPlace. */
 let _endRoom = null;
+/** Entities placed via onPlace whose positions are synced in-place by the engine. */
+let _placedEnemies = [];
 
 /** Mission ids whose complete animation has already played; rendered hidden. */
 const _hiddenMissions = new Set();
@@ -121,15 +123,23 @@ const game = createGame(document.body, {
       }
 
       // Place one goblin in the second candidate room.
+      // We create the entity directly (mirroring what place.enemy does) so we
+      // can hold a live reference whose x/z are synced in-place by the engine.
       if (candidates.length > 1) {
         const gr = candidates[1];
-        place.enemy(gr.cx, gr.cz, "goblin", {
-          hp: 8,
-          maxHp: 8,
-          attack: 2,
-          defense: 0,
-          speed: 6,
-        });
+        const goblin = {
+          id: `enemy_goblin_${gr.cx}_${gr.cz}`,
+          kind: "enemy",
+          type: "goblin",
+          sprite: "goblin",
+          x: gr.cx,
+          z: gr.cz,
+          hp: 8, maxHp: 8, attack: 2, defense: 0,
+          speed: 6, alive: true, blocksMove: true,
+          faction: "enemy", tick: 0,
+        };
+        game.turns.addActor(goblin);
+        _placedEnemies.push(goblin);
       }
     },
   },
@@ -179,24 +189,53 @@ attachMinimap(game, minimapEl, {
 });
 
 // ---------------------------------------------------------------------------
-// 3D renderer — plain coloured cubes (no atlas required)
+// 3D renderer — atlas textures for walls/floor/ceiling; cubes for entities
 // ---------------------------------------------------------------------------
 
-const renderer = createDungeonRenderer(viewportEl, game);
+let renderer;
 
-game.generate();
+const atlasImg = new Image();
+atlasImg.onload = () => {
+  renderer = createDungeonRenderer(viewportEl, game, {
+    atlas: {
+      image: atlasImg,
+      tileWidth: 64,
+      tileHeight: 64,
+      sheetWidth: 512,
+      sheetHeight: 1024,
+      columns: 8,
+    },
+    floorTileId: 20,
+    ceilTileId: 19,
+    wallTileId: 16,
+    entityAppearances: {
+      // Enemies — tall red cube
+      goblin:        { color: 0xcc2222, widthFactor: 0.35, heightFactor: 0.55, depthFactor: 0.35 },
+      // Fallback for any unrecognised enemy kind
+      enemy:         { color: 0xcc2222, widthFactor: 0.35, heightFactor: 0.55, depthFactor: 0.35 },
+      // Chest — squat wide tan rectangular box
+      chest:         { color: 0xc8922a, widthFactor: 0.55, heightFactor: 0.28, depthFactor: 0.40 },
+      // Items — small bright-blue cube
+      health_potion: { color: 0x4488ee, widthFactor: 0.18, heightFactor: 0.22, depthFactor: 0.18 },
+      item:          { color: 0x4488ee, widthFactor: 0.18, heightFactor: 0.22, depthFactor: 0.18 },
+    },
+  });
 
-// Cache solid data for the exploration mission (mission 9).
-const outputs = game.dungeon.outputs;
-_solidData = outputs?.textures?.solid?.image?.data ?? null;
-_dungeonW = outputs?.width ?? 0;
-if (_solidData) {
-  for (let i = 0; i < _solidData.length; i++) {
-    if (_solidData[i] === 0) _totalWalkable++;
+  game.generate();
+
+  // Cache solid data for the exploration mission (mission 9).
+  const outputs = game.dungeon.outputs;
+  _solidData = outputs?.textures?.solid?.image?.data ?? null;
+  _dungeonW = outputs?.width ?? 0;
+  if (_solidData) {
+    for (let i = 0; i < _solidData.length; i++) {
+      if (_solidData[i] === 0) _totalWalkable++;
+    }
   }
-}
 
-setupTutorialMissions();
+  setupTutorialMissions();
+};
+atlasImg.src = window.ATLAS_DATA_URL;
 
 // ---------------------------------------------------------------------------
 // Chest interaction helper
@@ -490,6 +529,15 @@ game.events.on("turn", ({ turn }) => {
   turnEl.textContent = String(turn);
   updateStats();
   renderMissions();
+
+  // Sync cubes: live enemies (positions updated in-place by engine) + chest
+  // (static decoration — shown until opened).
+  if (renderer) {
+    const chestCubes = (_chestPos && !_chestOpened)
+      ? [{ id: "chest_cube", type: "chest", kind: "decoration", x: _chestPos.x, z: _chestPos.z, alive: true }]
+      : [];
+    renderer.setEntities([..._placedEnemies, ...chestCubes]);
+  }
 
   // ── Exploration tracking (mission 9) ──────────────────────────────────
   // Mark walkable cells within a 3-tile radius as visited each turn.

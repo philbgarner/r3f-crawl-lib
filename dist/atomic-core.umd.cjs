@@ -3195,8 +3195,31 @@ void main() {
 				if (entry.holder.mesh) scene.add(entry.holder.mesh);
 			}
 		}
-		const entityGeo = new three.BoxGeometry(tileSize * .35, ceilingH * .55, tileSize * .35);
-		const entityMat = new three.MeshStandardMaterial({ color: 13378082 });
+		const appearances = options.entityAppearances ?? {};
+		const entityGeoCache = /* @__PURE__ */ new Map();
+		const entityMatCache = /* @__PURE__ */ new Map();
+		function resolveAppearanceKey(e) {
+			if (appearances[e.type]) return e.type;
+			if (appearances[e.kind]) return e.kind;
+			return "__default__";
+		}
+		function getEntityGeo(key) {
+			if (!entityGeoCache.has(key)) {
+				const spec = appearances[key] ?? {};
+				const wf = spec.widthFactor ?? .35;
+				const hf = spec.heightFactor ?? .55;
+				const df = spec.depthFactor ?? wf;
+				entityGeoCache.set(key, new three.BoxGeometry(tileSize * wf, ceilingH * hf, tileSize * df));
+			}
+			return entityGeoCache.get(key);
+		}
+		function getEntityMat(key) {
+			if (!entityMatCache.has(key)) {
+				const spec = appearances[key] ?? {};
+				entityMatCache.set(key, new three.MeshStandardMaterial({ color: spec.color ?? 13378082 }));
+			}
+			return entityMatCache.get(key);
+		}
 		const entityMeshMap = /* @__PURE__ */ new Map();
 		function syncEntities(entities) {
 			const aliveIds = new Set(entities.filter((e) => e.alive).map((e) => e.id));
@@ -3206,12 +3229,14 @@ void main() {
 			}
 			for (const e of entities) {
 				if (!e.alive) continue;
+				const key = resolveAppearanceKey(e);
 				if (!entityMeshMap.has(e.id)) {
-					const newMesh = new three.Mesh(entityGeo, entityMat);
-					entityMeshMap.set(e.id, newMesh);
-					scene.add(newMesh);
+					const mesh = new three.Mesh(getEntityGeo(key), getEntityMat(key));
+					entityMeshMap.set(e.id, mesh);
+					scene.add(mesh);
 				}
-				entityMeshMap.get(e.id).position.set((e.x + .5) * tileSize, ceilingH * EYE_HEIGHT_FACTOR, (e.z + .5) * tileSize);
+				const hf = (appearances[key] ?? {}).heightFactor ?? .55;
+				entityMeshMap.get(e.id).position.set((e.x + .5) * tileSize, ceilingH * hf / 2, (e.z + .5) * tileSize);
 			}
 		}
 		let tgtX = 0, tgtZ = 0, tgtYaw = 0;
@@ -3312,6 +3337,8 @@ void main() {
 				cancelAnimationFrame(rafId);
 				ro.disconnect();
 				game.events.off("turn", onTurn);
+				for (const geo of entityGeoCache.values()) geo.dispose();
+				for (const mat of entityMatCache.values()) mat.dispose();
 				glRenderer.dispose();
 				canvas.remove();
 			}

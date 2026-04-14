@@ -90,6 +90,12 @@ export type DungeonRendererOptions = {
      * Falls back to `ceilTileId` for any direction not specified.
      */
     ceilSkirtTiles?: DirectionFaceMap;
+    /**
+     * Per-entity-type (or per-kind) visual overrides for the cube renderer.
+     * Keys are matched against `entity.type` first, then `entity.kind`.
+     * Unmatched entities use built-in defaults (0.35×0.55×0.35 tileSize fractions, red).
+     */
+    entityAppearances?: Record<string, EntityAppearanceSpec>;
 };
 /** Which class of dungeon geometry a layer targets. */
 export type LayerTarget = 'floor' | 'ceil' | 'wall' | 'floorSkirt' | 'ceilSkirt';
@@ -129,6 +135,21 @@ export type LayerSpec = {
 export type LayerHandle = {
     /** Remove this layer from the scene and release its geometry. */
     remove(): void;
+};
+/**
+ * Visual appearance for a specific entity type or kind used by the cube renderer.
+ * Keys in `DungeonRendererOptions.entityAppearances` are matched against
+ * `entity.type` first, then `entity.kind` as a fallback.
+ */
+export type EntityAppearanceSpec = {
+    /** Hex colour number or CSS colour string. Default: 0xcc2222. */
+    color?: number | string;
+    /** Width as a fraction of tileSize. Default: 0.35. */
+    widthFactor?: number;
+    /** Height as a fraction of ceilingHeight. Default: 0.55. */
+    heightFactor?: number;
+    /** Depth as a fraction of tileSize. Defaults to widthFactor when omitted. */
+    depthFactor?: number;
 };
 export type DungeonRenderer = {
     /**
