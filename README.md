@@ -1,4 +1,8 @@
-# r3f-crawl-lib
+# Atomic-Core
+
+A dungeon crawler library.
+
+---
 
 A composable JavaScript library built on [Three.js](https://threejs.org/) for building first-person 3D dungeon crawl games in the browser.
 
