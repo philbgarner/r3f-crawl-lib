@@ -29,6 +29,7 @@ Game logic lives entirely in your JS layer – the library provides the renderin
   - [Spawn callback](#spawn-callback)
   - [Decoration callback](#decoration-callback)
   - [Keybindings helper](#keybindings-helper)
+  - [Inventory dialog](#inventory-dialog)
   - [Script tag API surface](#script-tag-api-surface)
 - [Core Concepts](#core-concepts)
   - [Dungeon](#dungeon)
@@ -47,6 +48,7 @@ Game logic lives entirely in your JS layer – the library provides the renderin
   - [Decorations](#decorations)
   - [Combat](#combat)
   - [Items & Inventory](#items--inventory)
+  - [Inventory Dialog](#inventory-dialog-1)
   - [Hidden Passages](#hidden-passages)
   - [3D Renderer](#3d-renderer-1)
     - [Per-direction Tile Specs](#per-direction-tile-specs)
@@ -84,6 +86,7 @@ Game logic lives entirely in your JS layer – the library provides the renderin
 - Stationary decoration entities (props, furniture, fixtures)
 - Atlas surface painting – apply tile layers to walls, floors, and ceilings per-tile
 - Configurable keybindings
+- **Inventory dialog UI** – `showInventory()` renders a two-column RPG inventory screen (character profile, item grid, equipment paper-doll, stat bars, indicators, action buttons) with full drag-and-drop support; pass `customLayout: true` for a bare `<dialog>` you control
 - Audio hooks (Howler.js compatible)
 - Optional multiplayer transport layer (WebSocket-based, server-authoritative)
 - Script tag API – no build step required
@@ -589,6 +592,49 @@ AtomicCore.attachKeybindings(game, {
 })
 ```
 
+### Inventory dialog
+
+`showInventory(opts)` opens a modal RPG inventory screen and returns a handle for live updates. By default it builds a full two-column layout; pass `customLayout: true` to get a bare `<dialog>` you populate yourself.
+
+```js
+// Guard game keys while the dialog is open
+attachKeybindings(game, {
+  bindings: { openInventory: ['i', 'I'], /* ... */ },
+  onAction(action, event) {
+    if (document.querySelector('dialog[open]')) return
+    if (action === 'openInventory') openInventory()
+    // ... movement etc.
+  },
+})
+
+function openInventory() {
+  var handle = AtomicCore.showInventory({
+    inventory:     game.player.inventory,
+    equippedItems: { weapon: null, head: null },
+    characterName: 'ADVENTURER',
+    stats: [
+      { label: 'HP', value: game.player.hp, max: game.player.maxHp },
+    ],
+    keybindings: { close: ['Escape', 'i', 'I'] },
+
+    onUseItem:  function(slot) { game.player.useItem(slot.index)  },
+    onDropItem: function(slot) { game.player.dropItem(slot.index) },
+    onEquip:    function(key, slot) { /* equip logic */ },
+    onUnequip:  function(key, item)  { /* unequip logic */ },
+    onClose:    function() { /* dialog closed */ },
+  })
+
+  // Live-update the HP bar on every damage event
+  var updateHp = function() { handle.setStat('HP', game.player.hp) }
+  game.events.on('damage', updateHp)
+  handle.on('close', function() { game.events.off('damage', updateHp) })
+}
+```
+
+See [Inventory Dialog](#inventory-dialog-1) in Core Concepts for the full option reference and the `customLayout` API.
+
+---
+
 ### Script tag API surface
 
 | Function | Description |
@@ -604,6 +650,7 @@ AtomicCore.attachKeybindings(game, {
 | `AtomicCore.createEnemy(opts)` | Create an enemy entity |
 | `AtomicCore.createDecoration(opts)` | Create a stationary decoration |
 | `AtomicCore.createItem(opts)` | Create an item |
+| `AtomicCore.showInventory(opts)` | Open an RPG inventory dialog; returns a live handle |
 | `AtomicCore.buildTilesetMap(tiledJson, options)` | Build a GID→atlas-name map from a Tiled tileset JSON |
 | `AtomicCore.createWebSocketTransport(url)` | Create a browser-side WebSocket transport for multiplayer |
 | `AtomicCore.registerTheme(name, def)` | Register a custom dungeon theme |
@@ -1110,6 +1157,96 @@ game.player.inventory   // array of item slots (null = empty)
 game.player.pickup(itemId)
 game.player.useItem(slotIndex)
 game.player.dropItem(slotIndex)
+```
+
+---
+
+### Inventory Dialog
+
+`showInventory(opts)` opens a `<dialog>` modal and returns a handle. All inventory state is managed internally; the callbacks let you hook into each interaction and commit turn actions.
+
+#### Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `customLayout` | `boolean` | `false` | Skip built-in DOM; returns a bare `<dialog>` you populate via `handle.getElement()` |
+| `inventory` | `InventorySlot[]` | `[]` | Initial inventory contents |
+| `equippedItems` | `Record<string, Item>` | `{}` | Items currently in equipment slots (keyed by slot key) |
+| `characterName` | `string` | `'PLAYER'` | Name shown in the profile header |
+| `portrait` | `string \| null` | `null` | Image URL for the character portrait |
+| `stats` | `StatDef[]` | `[{label:'HP',value:10,max:10}]` | Stat bars shown in the profile panel |
+| `gridCols` | `number` | `2` | Inventory grid column count |
+| `gridRows` | `number` | `7` | Inventory grid row count |
+| `equipSlots` | `EquipSlotDef[] \| null` | default 10-slot body | Equipment slot positions on the paper-doll |
+| `indicators` | `IndicatorDef[]` | `[]` | Small icon+value readouts (gold, arrows, etc.) |
+| `actions` | `ActionDef[]` | `[]` | Extra action buttons added to the action strip |
+| `resolveIcon` | `(item) => IconDescriptor \| null` | `null` | Return an atlas region or URL for an item icon; falls back to a letter badge |
+| `dragIcon` | `(item, el) => string \| HTMLElement \| null` | `null` | Custom drag ghost element |
+| `keybindings` | `Record<string, string[]>` | see below | Override or extend default key mappings |
+| `className` | `string` | `''` | Extra CSS class added to the `<dialog>` element |
+| `background` | `BackgroundDef` | — | Static image, nine-slice, or animated canvas background |
+| `onClose` | `() => void` | — | Called when the dialog closes |
+| `onSelectSlot` | `(slot) => void` | — | Called when an inventory slot is clicked |
+| `onUseItem` | `(slot) => void` | — | Called on double-click or Enter |
+| `onDropItem` | `(slot) => void` | — | Called when an item is dragged to the trash target |
+| `onEquip` | `(key, slot) => void` | — | Called when an item is dragged onto an equipment slot |
+| `onUnequip` | `(key, item) => void` | — | Called when an equipped item is clicked to return it to inventory |
+| `onDragStart` | `(item, slot, e) => void` | — | Called at the start of a drag |
+| `onDragEnter` | `(item, slot, e) => void` | — | Called when a drag enters an inventory slot |
+| `onDrop` | `(item, fromSlot, toSlot, e) => boolean \| void` | — | Called on any drop; return `false` to cancel the move |
+
+**Default keybindings**
+
+| Action | Keys |
+|---|---|
+| `close` | `Escape` |
+| `navUp/Down/Left/Right` | Arrow keys |
+| `useSelected` | `Enter` |
+| `dropSelected` | `Delete`, `Backspace` |
+
+#### Handle
+
+| Method | Description |
+|---|---|
+| `handle.close()` | Close and remove the dialog |
+| `handle.isOpen()` | Returns `true` while open |
+| `handle.getElement()` | Returns the raw `<dialog>` DOM node |
+| `handle.on(event, cb)` | Subscribe to an `inv:<event>` custom event |
+| `handle.off(event, cb)` | Unsubscribe |
+| `handle.setInventory(slots)` | Replace the displayed inventory and re-render the grid |
+| `handle.setEquipped(equipped)` | Replace the equipment state and re-render all slots |
+| `handle.setStat(label, value, max?)` | Update a stat bar value (and optionally its max) |
+| `handle.setIndicator(key, value)` | Update an indicator readout |
+| `handle.setBackground(bg)` | Swap the background at runtime |
+| `handle.getCanvas()` | Returns the background `<canvas>` element |
+| `handle.getRegion(name)` | Returns a live DOM element: `'left'`, `'right'`, `'profile'`, `'grid'`, `'equipment'`, `'indicators'`, `'actions'` |
+
+> `setInventory`, `setEquipped`, `setStat`, `setIndicator`, `setBackground`, `getCanvas`, and `getRegion` are only present when `customLayout` is `false` (the default).
+
+#### Custom layout
+
+Pass `customLayout: true` to receive a bare `<dialog>`. You get the core handle methods (`close`, `isOpen`, `getElement`, `on`, `off`) and Escape still closes the dialog — the library does nothing else.
+
+```js
+var handle = AtomicCore.showInventory({ customLayout: true })
+var dialog = handle.getElement()
+// build your own DOM inside dialog
+var grid = document.createElement('div')
+grid.className = 'my-grid'
+dialog.appendChild(grid)
+```
+
+#### Overriding default regions
+
+With the default layout you can retrieve and modify any region's DOM node:
+
+```js
+var handle = AtomicCore.showInventory({ inventory: mySlots })
+// Append a custom footer below the action strip
+var actions = handle.getRegion('actions')
+var footer = document.createElement('div')
+footer.textContent = 'Page 1 / 3'
+actions.appendChild(footer)
 ```
 
 ---

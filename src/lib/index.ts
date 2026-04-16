@@ -29,6 +29,10 @@ export type { ActionTransport, ServerStateUpdate, PlayerNetState, DungeonInitPay
 // Mission system
 export type { Mission, MissionStatus, MissionContext, MissionEvaluator, MissionCompleteCallback, MissionDef, MissionsHandle } from './missions/types'
 
+// UI
+export { showInventory }                             from './ui/inventoryDialog'
+export type { InventoryOptions, InventoryHandle, InventoryHandleCore, EquipSlotDef, StatDef, IndicatorDef, ActionDef, IconDescriptor, BackgroundDef, DropTarget } from './ui/inventoryDialog'
+
 // Type exports
 export type { GameEventMap, EventEmitter }           from './events/eventEmitter'
 export type { DungeonOutputs, BspDungeonOutputs }    from './dungeon/bsp'
