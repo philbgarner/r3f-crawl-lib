@@ -1,52 +1,55 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>atomic-core — Tutorial Example</title>
-  <link rel="stylesheet" href="./styles.css" />
-</head>
-<body>
-  <div id="sidebar">
-    <h1>Tutorial</h1>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>atomic-core — Tutorial Example</title>
+        <link rel="stylesheet" href="./styles.css" />
+    </head>
+    <body>
+        <div id="sidebar">
+            <h1>Tutorial</h1>
 
-    <div id="stats">
-      HP: <span id="hp">—</span><br>
-      Turn: <span id="turn">0</span><br>
-      Pos: <span id="pos">—</span>
-    </div>
+            <div id="stats">
+                HP: <span id="hp">—</span><br />
+                Turn: <span id="turn">0</span><br />
+                Pos: <span id="pos">—</span>
+            </div>
 
-    <div id="missions-panel">
-      <div id="missions-title">Missions</div>
-      <div id="missions-list"></div>
-      <div id="missions-animating"></div>
-    </div>
+            <div id="missions-panel">
+                <div id="missions-title">Missions</div>
+                <div id="missions-list"></div>
+                <div id="missions-animating"></div>
+            </div>
 
-    <div id="log"></div>
+            <div id="log"></div>
 
-    <div id="controls">
-      WASD / Arrows — move<br>
-      Q / E — turn left / right<br>
-      Space — wait<br>
-      F — interact (chest)<br>
-      U — use item
-    </div>
-  </div>
+            <div id="controls">
+                WASD / Arrows — move<br />
+                Q / E — turn left / right<br />
+                Space — wait<br />
+                F — interact (chest)<br />
+                U — use item
+            </div>
+        </div>
 
-  <div id="canvas-wrap">
-    <div id="viewport"></div>
-    <canvas id="minimap" width="160" height="160"></canvas>
-  </div>
+        <div id="canvas-wrap">
+            <div id="viewport"></div>
+            <canvas id="minimap" width="160" height="160"></canvas>
+        </div>
 
-  <!-- mission-complete banner (hidden until triggered) -->
-  <div id="banner" aria-live="polite"></div>
+        <!-- mission-complete banner (hidden until triggered) -->
+        <div id="banner" aria-live="polite"></div>
 
-  <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js';
-    window.THREE = THREE;
-  </script>
-  <script src="./atlas-data.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/philbgarner/atomic-core@v0.3.0/dist/atomic-core.iife.js" defer></script>
-  <script src="./tutorial.js" defer></script>
-</body>
+        <script type="module">
+            import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js";
+            window.THREE = THREE;
+        </script>
+        <script src="./atlas-data.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/gh/philbgarner/atomic-core@v0.3.0/dist/atomic-core.iife.js"
+            defer
+        ></script>
+        <script src="./tutorial.js" defer></script>
+    </body>
 </html>
