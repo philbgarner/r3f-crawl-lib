@@ -7,9 +7,9 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Build & Launch Server",
+      "name": "Build & Launch Debug",
       "program": "${workspaceFolder}/src/server/index.js",
-      "preLaunchTask": "build-server",
+      "preLaunchTask": "watch",
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "skipFiles": ["<node_internals>/**"],
     },

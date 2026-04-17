@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsc && vite build",
     "build:server": "vite build --config vite.config.server.ts",
+	"build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "dev": "vite build --watch",
     "multiplayer": "npm run build:server && node src/server/index.js",

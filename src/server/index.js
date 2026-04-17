@@ -342,7 +342,7 @@ function getExternalIPs() {
 server.listen(PORT, () => {
   const ips = getExternalIPs()
   console.log()
-  console.log('  r3f-crawl-lib multiplayer server')
+  console.log('  atomic-core multiplayer server')
   console.log()
   console.log(`  Local:    http://localhost:${PORT}`)
   for (const ip of ips) {
