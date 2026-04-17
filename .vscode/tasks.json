@@ -5,7 +5,28 @@
       "label": "build-server",
       "type": "npm",
       "script": "build:server",
-      "problemMatcher": [],
+      "problemMatcher": []
     },
-  ],
+    {
+      "label": "build",
+      "type": "npm",
+      "script": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "watch",
+      "type": "npm",
+      "script": "build:watch",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "typescript",
+        "pattern": "$tsc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Starting compilation",
+          "endsPattern": "Watching for file changes"
+        }
+      }
+    }
+  ]
 }
