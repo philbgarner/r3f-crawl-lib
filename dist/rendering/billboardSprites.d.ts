@@ -1,9 +1,10 @@
 import { EntityBase } from '../entities/types';
+import { PackedAtlas } from './textureLoader';
 import * as THREE from "three";
 export type AngleKey = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
 export interface SpriteLayer {
-    /** Atlas tile index (row-major, 0-based). */
-    tileId: number;
+    /** Atlas tile: string name (resolved via resolver) or numeric tile index. */
+    tile: string | number;
     /** Horizontal offset from billboard center, in world units. Default 0. */
     offsetX?: number;
     /** Vertical offset from billboard center, in world units. Default 0. */
@@ -16,8 +17,8 @@ export interface SpriteLayer {
 export interface AngleOverride {
     /** Which layer index this override targets. */
     layerIndex: number;
-    /** Replacement tile ID for this angle. */
-    tileId: number;
+    /** Replacement tile for this angle: string name or numeric tile index. */
+    tile: string | number;
     /** Replacement opacity (optional). */
     opacity?: number;
 }
@@ -53,5 +54,5 @@ export interface BillboardHandle {
  */
 export declare function createBillboard(entity: EntityBase & {
     spriteMap: SpriteMap;
-}, atlas: THREE.Texture, atlasColumns: number, tileSizeNorm: THREE.Vector2, scene: THREE.Scene): BillboardHandle;
+}, packedAtlas: PackedAtlas, scene: THREE.Scene, resolver?: (name: string) => number): BillboardHandle;
 //# sourceMappingURL=billboardSprites.d.ts.map

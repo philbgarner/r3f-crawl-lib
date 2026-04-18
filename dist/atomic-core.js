@@ -2711,24 +2711,22 @@ function createItem(opts) {
 * Handles aTileId UV lookup, aHeightOffset, and fog distance.
 */
 var BASIC_ATLAS_VERT = `
-attribute float aTileId;
+attribute float aUvX;
+attribute float aUvY;
+attribute float aUvW;
+attribute float aUvH;
 attribute float aHeightOffset;
 attribute float aUvRotation;
 // 1.0 = full tile; < 1.0 = show only that fraction of the tile, top-aligned.
 // Used for partial-height skirt panels so bricks keep their aspect ratio.
 attribute float aUvHeightScale;
-uniform vec2  uTileSize;
-uniform float uColumns;
 
 varying vec2  vAtlasUv;
 varying vec2  vTileOrigin;
+varying vec2  vTileSize;
 varying float vFogDist;
 
 void main() {
-  float id  = floor(aTileId + 0.5);
-  float col = mod(id, uColumns);
-  float row = floor(id / uColumns);
-
   // Scale face height dimension BEFORE rotation so it always affects the
   // physical height axis of the face, regardless of UV rotation.
   float hs = clamp(aUvHeightScale, 0.0, 1.0);
@@ -2740,9 +2738,9 @@ void main() {
   else if (iRot == 2) localUv = vec2(1.0 - localUv.x, 1.0 - localUv.y);
   else if (iRot == 3) localUv = vec2(1.0 - localUv.y, localUv.x);
 
-  vec2 offset = vec2(col * uTileSize.x, 1.0 - (row + 1.0) * uTileSize.y);
-  vAtlasUv    = offset + localUv * uTileSize;
-  vTileOrigin = offset;
+  vTileOrigin = vec2(aUvX, aUvY);
+  vTileSize   = vec2(aUvW, aUvH);
+  vAtlasUv    = vTileOrigin + localUv * vTileSize;
 
   vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
   worldPos.y   += aHeightOffset;
@@ -2759,7 +2757,6 @@ void main() {
 */
 var BASIC_ATLAS_FRAG = `
 uniform sampler2D uAtlas;
-uniform vec2  uTileSize;
 uniform vec2  uTexelSize;
 uniform vec3  uFogColor;
 uniform float uFogNear;
@@ -2767,11 +2764,12 @@ uniform float uFogFar;
 
 varying vec2  vAtlasUv;
 varying vec2  vTileOrigin;
+varying vec2  vTileSize;
 varying float vFogDist;
 
 void main() {
   vec2 uvMin   = vTileOrigin + uTexelSize * 0.5;
-  vec2 uvMax   = vTileOrigin + uTileSize  - uTexelSize * 0.5;
+  vec2 uvMax   = vTileOrigin + vTileSize  - uTexelSize * 0.5;
   vec2 atlasUv = clamp(vAtlasUv, uvMin, uvMax);
 
   vec4 color = texture2D(uAtlas, atlasUv);
@@ -2787,681 +2785,23 @@ void main() {
 function makeBasicAtlasUniforms(params) {
 	return {
 		uAtlas: { value: params.atlas },
-		uTileSize: { value: params.tileSize },
 		uTexelSize: { value: params.texelSize },
-		uColumns: { value: params.columns },
 		uFogColor: { value: params.fogColor },
 		uFogNear: { value: params.fogNear },
 		uFogFar: { value: params.fogFar }
 	};
 }
 //#endregion
-//#region src/lib/rendering/billboardSprites.ts
-var BILLBOARD_VERT = `
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-var BILLBOARD_FRAG = `
-uniform sampler2D uAtlas;
-uniform vec2  uTileSize;
-uniform float uColumns;
-uniform float uTileId;
-uniform float uOpacity;
-
-varying vec2 vUv;
-
-void main() {
-  float col = mod(uTileId, uColumns);
-  float row = floor(uTileId / uColumns);
-  vec2 origin = vec2(col, row) * uTileSize;
-  vec2 atlasUv = origin + vUv * uTileSize;
-  vec4 color = texture2D(uAtlas, atlasUv);
-  if (color.a < 0.01) discard;
-  gl_FragColor = vec4(color.rgb, color.a * uOpacity);
-}
-`;
-var ANGLE_KEYS = [
-	"N",
-	"NE",
-	"E",
-	"SE",
-	"S",
-	"SW",
-	"W",
-	"NW"
-];
-function selectAngleKey(entityFacing, cameraYaw) {
-	const rel = ((entityFacing - cameraYaw) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-	return ANGLE_KEYS[Math.round(rel / (Math.PI / 4)) % 8] ?? "N";
-}
+//#region src/lib/rendering/tileAtlas.ts
 /**
-* Create a per-entity billboard handle. Call `handle.update()` each RAF frame.
-* The atlas texture should already be created and cached by the caller.
+* Resolve a tile specifier to a numeric ID.
+* If `tile` is already a number, return it as-is.
+* If `tile` is a string, call `resolver` to look it up.
+* Returns 0 when the resolver returns undefined (safe fallback).
 */
-function createBillboard(entity, atlas, atlasColumns, tileSizeNorm, scene) {
-	const { spriteMap } = entity;
-	const group = new THREE.Group();
-	scene.add(group);
-	const layerEntries = spriteMap.layers.map((layer, layerIndex) => {
-		const uniforms = {
-			uAtlas: { value: atlas },
-			uTileSize: { value: tileSizeNorm },
-			uColumns: { value: atlasColumns },
-			uTileId: { value: layer.tileId },
-			uOpacity: { value: layer.opacity ?? 1 }
-		};
-		const mat = new THREE.ShaderMaterial({
-			vertexShader: BILLBOARD_VERT,
-			fragmentShader: BILLBOARD_FRAG,
-			uniforms,
-			transparent: true,
-			depthWrite: false,
-			side: THREE.DoubleSide
-		});
-		const geo = new THREE.PlaneGeometry(1, 1);
-		const mesh = new THREE.Mesh(geo, mat);
-		mesh.renderOrder = layerIndex + 1;
-		const s = layer.scale ?? 1;
-		mesh.position.set(layer.offsetX ?? 0, layer.offsetY ?? 0, layerIndex * .001);
-		mesh.scale.set(s, s, 1);
-		group.add(mesh);
-		return {
-			mesh,
-			uniforms,
-			baseLayer: layer,
-			layerIndex
-		};
-	});
-	return {
-		update(ent, cameraYaw, tileSize, ceilingH) {
-			const wx = (ent.x + .5) * tileSize;
-			const wz = (ent.z + .5) * tileSize;
-			const wy = ceilingH * .275;
-			group.position.set(wx, wy, wz);
-			group.rotation.set(0, cameraYaw, 0, "YXZ");
-			const sprW = tileSize * .8;
-			const sprH = ceilingH * .55;
-			const angleKey = selectAngleKey(ent.facing ?? 0, cameraYaw);
-			const overrides = spriteMap.angles?.[angleKey];
-			for (const entry of layerEntries) {
-				const override = overrides?.find((o) => o.layerIndex === entry.layerIndex);
-				entry.uniforms.uTileId.value = override?.tileId ?? entry.baseLayer.tileId;
-				entry.uniforms.uOpacity.value = override?.opacity ?? entry.baseLayer.opacity ?? 1;
-				const s = entry.baseLayer.scale ?? 1;
-				entry.mesh.scale.set(sprW * s, sprH * s, 1);
-				entry.mesh.position.set(entry.baseLayer.offsetX ?? 0, entry.baseLayer.offsetY ?? 0, entry.layerIndex * .001);
-			}
-		},
-		dispose() {
-			scene.remove(group);
-			for (const entry of layerEntries) {
-				entry.mesh.geometry.dispose();
-				entry.mesh.material.dispose();
-			}
-		}
-	};
-}
-//#endregion
-//#region src/lib/rendering/dungeonRenderer.ts
-/**
-* dungeonRenderer.ts
-*
-* Plain Three.js first-person dungeon renderer — no React or R3F required.
-* Designed for script-tag usage: create it after `game.generate()` is wired
-* up, and it will visualise the dungeon and player/entity positions.
-*
-* Usage (plain colours):
-*   const renderer = createDungeonRenderer(document.getElementById('viewport'), game);
-*
-* Usage (tile atlas):
-*   const renderer = createDungeonRenderer(el, game, {
-*     atlas: {
-*       texture,
-*       tileWidth: 16, tileHeight: 16,
-*       sheetWidth: 256, sheetHeight: 256,
-*       columns: 16,
-*     },
-*     floorTileId: 0,
-*     ceilTileId: 1,
-*     wallTileId: 2,
-*   });
-*
-*   // Pass live entity list on every turn:
-*   game.events.on('turn', () => renderer.setEntities(enemies));
-*/
-var HALF_PI = Math.PI / 2;
-/** Eye height as a fraction of ceiling height (same as PerspectiveDungeonView). */
-var EYE_HEIGHT_FACTOR = .66;
-function makeFaceMatrix(x, y, z, rx, ry, rz, w, h) {
-	return new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(w, h, 1));
-}
-/**
-* Build a PlaneGeometry with a pre-allocated aTileId InstancedBufferAttribute,
-* and an InstancedMesh using either a ShaderMaterial (atlas) or a plain material.
-*/
-function buildInstancedMesh(matrices, tileIds, material, useAtlas, heightOffsets, uvRotations, uvHeightScales) {
-	const geo = new THREE.PlaneGeometry(1, 1);
-	if (useAtlas) {
-		const tileIdArr = new Float32Array(matrices.length);
-		tileIds.forEach((id, i) => {
-			tileIdArr[i] = id;
-		});
-		geo.setAttribute("aTileId", new THREE.InstancedBufferAttribute(tileIdArr, 1));
-		const offsets = heightOffsets ?? new Float32Array(matrices.length);
-		geo.setAttribute("aHeightOffset", new THREE.InstancedBufferAttribute(offsets, 1));
-		const rotArr = new Float32Array(matrices.length);
-		if (uvRotations) uvRotations.forEach((r, i) => {
-			rotArr[i] = r;
-		});
-		geo.setAttribute("aUvRotation", new THREE.InstancedBufferAttribute(rotArr, 1));
-		const hsArr = new Float32Array(matrices.length).fill(1);
-		if (uvHeightScales) uvHeightScales.forEach((s, i) => {
-			hsArr[i] = s;
-		});
-		geo.setAttribute("aUvHeightScale", new THREE.InstancedBufferAttribute(hsArr, 1));
-	}
-	const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
-	matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
-	mesh.instanceMatrix.needsUpdate = true;
-	return mesh;
-}
-function createDungeonRenderer(element, game, options = {}) {
-	const tileSize = options.tileSize ?? 3;
-	const ceilingH = options.ceilingHeight ?? 3;
-	const fov = options.fov ?? 75;
-	const fogNear = options.fogNear ?? 5;
-	const fogFar = options.fogFar ?? 24;
-	const fogHex = options.fogColor ?? "#000000";
-	const lerpFactor = options.lerpFactor ?? .18;
-	const fogColor = new THREE.Color(fogHex);
-	const atlas = options.atlas;
-	const floorTileId = options.floorTileId ?? 0;
-	const ceilTileId = options.ceilTileId ?? 0;
-	const wallTileId = options.wallTileId ?? 0;
-	const wallTiles = options.wallTiles;
-	const floorSkirtTiles = options.floorSkirtTiles;
-	const ceilSkirtTiles = options.ceilSkirtTiles;
-	const glRenderer = new THREE.WebGLRenderer({ antialias: false });
-	glRenderer.setPixelRatio(window.devicePixelRatio);
-	glRenderer.setClearColor(fogColor);
-	const canvas = glRenderer.domElement;
-	canvas.style.cssText = "width:100%;height:100%;display:block;";
-	element.appendChild(canvas);
-	const scene = new THREE.Scene();
-	scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
-	const camera = new THREE.PerspectiveCamera(fov, 1, .05, fogFar * 2);
-	scene.add(new THREE.AmbientLight(16777215, 1));
-	const dirLight = new THREE.DirectionalLight(16777215, .6);
-	dirLight.position.set(.5, 1, .75);
-	scene.add(dirLight);
-	function makeAtlasMaterial(atlasConfig) {
-		const tex = new THREE.Texture(atlasConfig.image);
-		tex.magFilter = THREE.NearestFilter;
-		tex.minFilter = THREE.NearestFilter;
-		tex.needsUpdate = true;
-		return new THREE.ShaderMaterial({
-			vertexShader: BASIC_ATLAS_VERT,
-			fragmentShader: BASIC_ATLAS_FRAG,
-			uniforms: makeBasicAtlasUniforms({
-				atlas: tex,
-				tileSize: new THREE.Vector2(atlasConfig.tileWidth / atlasConfig.sheetWidth, atlasConfig.tileHeight / atlasConfig.sheetHeight),
-				texelSize: new THREE.Vector2(1 / atlasConfig.sheetWidth, 1 / atlasConfig.sheetHeight),
-				columns: atlasConfig.columns,
-				fogColor,
-				fogNear,
-				fogFar
-			}),
-			side: THREE.FrontSide
-		});
-	}
-	function makeAtlasMaterialDoubleSide(atlasConfig) {
-		const mat = makeAtlasMaterial(atlasConfig);
-		mat.side = THREE.DoubleSide;
-		return mat;
-	}
-	const floorMat = atlas ? makeAtlasMaterial(atlas) : new THREE.MeshStandardMaterial({ color: 5592422 });
-	const ceilMat = atlas ? makeAtlasMaterial(atlas) : new THREE.MeshStandardMaterial({ color: 2236979 });
-	const wallMat = atlas ? makeAtlasMaterial(atlas) : new THREE.MeshStandardMaterial({ color: 7037040 });
-	const ceilEdgeMat = atlas ? makeAtlasMaterialDoubleSide(atlas) : new THREE.MeshStandardMaterial({
-		color: 2236979,
-		side: THREE.DoubleSide
-	});
-	let floorMesh = null;
-	let ceilMesh = null;
-	let wallMesh = null;
-	let floorEdgeMesh = null;
-	let ceilEdgeMesh = null;
-	let dungeonBuilt = false;
-	const layerEntries = [];
-	/** Build an instanced mesh for a single LayerSpec by scanning the dungeon map. */
-	function buildLayerMesh(spec) {
-		const outputs = game.dungeon.outputs;
-		if (!outputs) return null;
-		const { width, height } = outputs;
-		const solid = outputs.textures.solid.image.data;
-		const floorOffData = outputs.textures.floorHeightOffset?.image.data;
-		const ceilOffData = outputs.textures.ceilingHeightOffset?.image.data;
-		const wallMidY = ceilingH / 2;
-		const offsetStep = tileSize * .5;
-		const matrices = [];
-		const tileIds = [];
-		const rotations = [];
-		const offsets = [];
-		const heightScales = [];
-		const filter = spec.filter ?? (() => ({ tileId: 0 }));
-		function isSolid(cx, cz) {
-			if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
-			return (solid[cz * width + cx] ?? 0) > 0;
-		}
-		function openFloorVal(ncx, ncz) {
-			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
-			if (isSolid(ncx, ncz)) return null;
-			return floorOffData ? floorOffData[ncz * width + ncx] ?? 128 : 128;
-		}
-		function openCeilVal(ncx, ncz) {
-			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
-			if (isSolid(ncx, ncz)) return null;
-			return ceilOffData ? ceilOffData[ncz * width + ncx] ?? 128 : 128;
-		}
-		function tryAdd(result, matrix, offset = 0, hs = 1) {
-			if (!result) return;
-			matrices.push(matrix);
-			tileIds.push(result.tileId ?? 0);
-			rotations.push(result.rotation ?? 0);
-			offsets.push(offset);
-			heightScales.push(hs);
-		}
-		for (let cz = 0; cz < height; cz++) for (let cx = 0; cx < width; cx++) {
-			if (isSolid(cx, cz)) continue;
-			const idx = cz * width + cx;
-			const wx = (cx + .5) * tileSize;
-			const wz = (cz + .5) * tileSize;
-			const floorVal = floorOffData ? floorOffData[idx] ?? 128 : 128;
-			const ceilVal = ceilOffData ? ceilOffData[idx] ?? 128 : 128;
-			if (spec.target === "floor" && floorVal !== 0) tryAdd(filter(cx, cz, void 0), makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize), (floorVal - 128) * offsetStep);
-			if (spec.target === "ceil") tryAdd(filter(cx, cz, void 0), makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize), -(ceilVal - 128) * offsetStep);
-			if (spec.target === "wall") {
-				if (isSolid(cx, cz - 1)) tryAdd(filter(cx, cz, "north"), makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
-				if (isSolid(cx, cz + 1)) tryAdd(filter(cx, cz, "south"), makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH));
-				if (isSolid(cx - 1, cz)) tryAdd(filter(cx, cz, "west"), makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH));
-				if (isSolid(cx + 1, cz)) tryAdd(filter(cx, cz, "east"), makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
-			}
-			if (spec.target === "floorSkirt" && floorVal !== 0) {
-				const feMidY = -tileSize / 2;
-				const nfN = openFloorVal(cx, cz - 1);
-				if (nfN !== null && nfN < floorVal) tryAdd(filter(cx, cz, "north"), makeFaceMatrix(wx, feMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
-				const nfS = openFloorVal(cx, cz + 1);
-				if (nfS !== null && nfS < floorVal) tryAdd(filter(cx, cz, "south"), makeFaceMatrix(wx, feMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
-				const nfW = openFloorVal(cx - 1, cz);
-				if (nfW !== null && nfW < floorVal) tryAdd(filter(cx, cz, "west"), makeFaceMatrix(cx * tileSize, feMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
-				const nfE = openFloorVal(cx + 1, cz);
-				if (nfE !== null && nfE < floorVal) tryAdd(filter(cx, cz, "east"), makeFaceMatrix((cx + 1) * tileSize, feMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
-			}
-			if (spec.target === "ceilSkirt") {
-				const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
-				const addCS = (ncVal, mx, mz, ry, dir) => {
-					if (ncVal === null || ncVal <= ceilVal) return;
-					const h = (ncVal - ceilVal) * offsetStep;
-					const midY = yCurrent - h / 2;
-					tryAdd(filter(cx, cz, dir), makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h), 0, h / tileSize);
-				};
-				addCS(openCeilVal(cx, cz - 1), wx, cz * tileSize, Math.PI, "north");
-				addCS(openCeilVal(cx, cz + 1), wx, (cz + 1) * tileSize, 0, "south");
-				addCS(openCeilVal(cx - 1, cz), cx * tileSize, wz, -HALF_PI, "west");
-				addCS(openCeilVal(cx + 1, cz), (cx + 1) * tileSize, wz, HALF_PI, "east");
-			}
-		}
-		if (matrices.length === 0) return null;
-		const useAtlas = spec.useAtlas ?? !!atlas;
-		const mesh = buildInstancedMesh(matrices, tileIds, spec.material, useAtlas, new Float32Array(offsets), rotations, spec.target === "ceilSkirt" ? heightScales : void 0);
-		if (spec.polygonOffset !== false) {
-			spec.material.polygonOffset = true;
-			spec.material.polygonOffsetFactor = -1;
-			spec.material.polygonOffsetUnits = -1;
-		}
-		mesh.renderOrder = 1;
-		return mesh;
-	}
-	function buildDungeon() {
-		if (dungeonBuilt) return;
-		const outputs = game.dungeon.outputs;
-		if (!outputs) return;
-		dungeonBuilt = true;
-		const { width, height } = outputs;
-		const solid = outputs.textures.solid.image.data;
-		const wallMidY = ceilingH / 2;
-		const offsetStep = tileSize * .5;
-		const floorOffData = outputs.textures.floorHeightOffset?.image.data;
-		const ceilOffData = outputs.textures.ceilingHeightOffset?.image.data;
-		function spec(map, dir, fallbackId) {
-			return map?.[dir] ?? {
-				tileId: fallbackId,
-				rotation: 0
-			};
-		}
-		const floors = [];
-		const ceils = [];
-		const walls = [];
-		const floorEdges = [];
-		const ceilEdges = [];
-		const floorIds = [];
-		const ceilIds = [];
-		const wallIds = [];
-		const floorEdgeIds = [];
-		const ceilEdgeIds = [];
-		const floorOffsets = [];
-		const ceilOffsets = [];
-		const wallRots = [];
-		const floorEdgeRots = [];
-		const ceilEdgeRots = [];
-		const ceilEdgeHeightScales = [];
-		function isSolid(cx, cz) {
-			if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
-			return (solid[cz * width + cx] ?? 0) > 0;
-		}
-		function openFloorVal(ncx, ncz) {
-			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
-			if (isSolid(ncx, ncz)) return null;
-			const nidx = ncz * width + ncx;
-			return floorOffData ? floorOffData[nidx] ?? 128 : 128;
-		}
-		function openCeilVal(ncx, ncz) {
-			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
-			if (isSolid(ncx, ncz)) return null;
-			const nidx = ncz * width + ncx;
-			return ceilOffData ? ceilOffData[nidx] ?? 128 : 128;
-		}
-		for (let cz = 0; cz < height; cz++) for (let cx = 0; cx < width; cx++) {
-			if (isSolid(cx, cz)) continue;
-			const idx = cz * width + cx;
-			const wx = (cx + .5) * tileSize;
-			const wz = (cz + .5) * tileSize;
-			const floorVal = floorOffData ? floorOffData[idx] ?? 128 : 128;
-			if (floorVal !== 0) {
-				floors.push(makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize));
-				floorIds.push(floorTileId);
-				floorOffsets.push((floorVal - 128) * offsetStep);
-			}
-			const ceilVal = ceilOffData ? ceilOffData[idx] ?? 128 : 128;
-			ceils.push(makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize));
-			ceilIds.push(ceilTileId);
-			ceilOffsets.push(-(ceilVal - 128) * offsetStep);
-			if (isSolid(cx, cz - 1)) {
-				const s = spec(wallTiles, "north", wallTileId);
-				walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
-				wallIds.push(s.tileId);
-				wallRots.push(s.rotation ?? 0);
-			}
-			if (isSolid(cx, cz + 1)) {
-				const s = spec(wallTiles, "south", wallTileId);
-				walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH));
-				wallIds.push(s.tileId);
-				wallRots.push(s.rotation ?? 0);
-			}
-			if (isSolid(cx - 1, cz)) {
-				const s = spec(wallTiles, "west", wallTileId);
-				walls.push(makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH));
-				wallIds.push(s.tileId);
-				wallRots.push(s.rotation ?? 0);
-			}
-			if (isSolid(cx + 1, cz)) {
-				const s = spec(wallTiles, "east", wallTileId);
-				walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
-				wallIds.push(s.tileId);
-				wallRots.push(s.rotation ?? 0);
-			}
-			if (floorVal !== 0) {
-				const feMidY = -tileSize / 2;
-				const nfN = openFloorVal(cx, cz - 1);
-				if (nfN !== null && nfN < floorVal) {
-					const s = spec(floorSkirtTiles, "north", floorTileId);
-					floorEdges.push(makeFaceMatrix(wx, feMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
-					floorEdgeIds.push(s.tileId);
-					floorEdgeRots.push(s.rotation ?? 0);
-				}
-				const nfS = openFloorVal(cx, cz + 1);
-				if (nfS !== null && nfS < floorVal) {
-					const s = spec(floorSkirtTiles, "south", floorTileId);
-					floorEdges.push(makeFaceMatrix(wx, feMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
-					floorEdgeIds.push(s.tileId);
-					floorEdgeRots.push(s.rotation ?? 0);
-				}
-				const nfW = openFloorVal(cx - 1, cz);
-				if (nfW !== null && nfW < floorVal) {
-					const s = spec(floorSkirtTiles, "west", floorTileId);
-					floorEdges.push(makeFaceMatrix(cx * tileSize, feMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
-					floorEdgeIds.push(s.tileId);
-					floorEdgeRots.push(s.rotation ?? 0);
-				}
-				const nfE = openFloorVal(cx + 1, cz);
-				if (nfE !== null && nfE < floorVal) {
-					const s = spec(floorSkirtTiles, "east", floorTileId);
-					floorEdges.push(makeFaceMatrix((cx + 1) * tileSize, feMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
-					floorEdgeIds.push(s.tileId);
-					floorEdgeRots.push(s.rotation ?? 0);
-				}
-			}
-			const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
-			function addCeilSkirt(ncVal, mx, mz, ry, dir) {
-				const s = spec(ceilSkirtTiles, dir, ceilTileId);
-				const h = (ncVal - ceilVal) * offsetStep;
-				const midY = yCurrent - h / 2;
-				ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
-				ceilEdgeIds.push(s.tileId);
-				ceilEdgeRots.push(s.rotation ?? 0);
-				ceilEdgeHeightScales.push(h / tileSize);
-			}
-			const ncN = openCeilVal(cx, cz - 1);
-			if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx, cz * tileSize, Math.PI, "north");
-			const ncS = openCeilVal(cx, cz + 1);
-			if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx, (cz + 1) * tileSize, 0, "south");
-			const ncW = openCeilVal(cx - 1, cz);
-			if (ncW !== null && ncW > ceilVal) addCeilSkirt(ncW, cx * tileSize, wz, -HALF_PI, "west");
-			const ncE = openCeilVal(cx + 1, cz);
-			if (ncE !== null && ncE > ceilVal) addCeilSkirt(ncE, (cx + 1) * tileSize, wz, HALF_PI, "east");
-		}
-		floorMesh = buildInstancedMesh(floors, floorIds, floorMat, !!atlas, new Float32Array(floorOffsets));
-		scene.add(floorMesh);
-		ceilMesh = buildInstancedMesh(ceils, ceilIds, ceilMat, !!atlas, new Float32Array(ceilOffsets));
-		scene.add(ceilMesh);
-		wallMesh = buildInstancedMesh(walls, wallIds, wallMat, !!atlas, void 0, wallRots);
-		scene.add(wallMesh);
-		floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeIds, floorMat, !!atlas, void 0, floorEdgeRots);
-		scene.add(floorEdgeMesh);
-		ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeIds, ceilEdgeMat, !!atlas, void 0, ceilEdgeRots, ceilEdgeHeightScales);
-		scene.add(ceilEdgeMesh);
-		for (const entry of layerEntries) if (!entry.holder.mesh) {
-			entry.holder.mesh = buildLayerMesh(entry.spec);
-			if (entry.holder.mesh) scene.add(entry.holder.mesh);
-		}
-	}
-	const appearances = options.entityAppearances ?? {};
-	const entityGeoCache = /* @__PURE__ */ new Map();
-	const entityMatCache = /* @__PURE__ */ new Map();
-	function resolveAppearanceKey(e) {
-		if (appearances[e.type]) return e.type;
-		if (appearances[e.kind]) return e.kind;
-		return "__default__";
-	}
-	function getEntityGeo(key) {
-		if (!entityGeoCache.has(key)) {
-			const spec = appearances[key] ?? {};
-			const wf = spec.widthFactor ?? .35;
-			const hf = spec.heightFactor ?? .55;
-			const df = spec.depthFactor ?? wf;
-			entityGeoCache.set(key, new THREE.BoxGeometry(tileSize * wf, ceilingH * hf, tileSize * df));
-		}
-		return entityGeoCache.get(key);
-	}
-	function getEntityMat(key) {
-		if (!entityMatCache.has(key)) {
-			const spec = appearances[key] ?? {};
-			entityMatCache.set(key, new THREE.MeshStandardMaterial({ color: spec.color ?? 13378082 }));
-		}
-		return entityMatCache.get(key);
-	}
-	const entityMeshMap = /* @__PURE__ */ new Map();
-	const billboardMap = /* @__PURE__ */ new Map();
-	let billboardAtlasTex = null;
-	function getBillboardAtlas() {
-		if (!atlas) return null;
-		if (!billboardAtlasTex) {
-			billboardAtlasTex = new THREE.Texture(atlas.image);
-			billboardAtlasTex.magFilter = THREE.NearestFilter;
-			billboardAtlasTex.minFilter = THREE.NearestFilter;
-			billboardAtlasTex.needsUpdate = true;
-		}
-		return billboardAtlasTex;
-	}
-	function syncEntities(entities) {
-		const aliveIds = new Set(entities.filter((e) => e.alive).map((e) => e.id));
-		for (const [id, mesh] of entityMeshMap) if (!aliveIds.has(id)) {
-			scene.remove(mesh);
-			entityMeshMap.delete(id);
-		}
-		for (const [id, handle] of billboardMap) if (!aliveIds.has(id)) {
-			handle.dispose();
-			billboardMap.delete(id);
-		}
-		for (const e of entities) {
-			if (!e.alive) continue;
-			if (e.spriteMap) {
-				if (!billboardMap.has(e.id)) {
-					const atlasTex = getBillboardAtlas();
-					if (atlasTex && atlas) {
-						const tileSizeNorm = new THREE.Vector2(atlas.tileWidth / atlas.sheetWidth, atlas.tileHeight / atlas.sheetHeight);
-						const handle = createBillboard(e, atlasTex, atlas.columns, tileSizeNorm, scene);
-						billboardMap.set(e.id, handle);
-					}
-				}
-			} else {
-				const key = resolveAppearanceKey(e);
-				if (!entityMeshMap.has(e.id)) {
-					const mesh = new THREE.Mesh(getEntityGeo(key), getEntityMat(key));
-					entityMeshMap.set(e.id, mesh);
-					scene.add(mesh);
-				}
-				const hf = (appearances[key] ?? {}).heightFactor ?? .55;
-				entityMeshMap.get(e.id).position.set((e.x + .5) * tileSize, ceilingH * hf / 2, (e.z + .5) * tileSize);
-			}
-		}
-	}
-	let currentEntities = [];
-	let tgtX = 0, tgtZ = 0, tgtYaw = 0;
-	let curX = 0, curZ = 0, curYaw = 0;
-	let initialized = false;
-	const onTurn = () => {
-		buildDungeon();
-		tgtX = (game.player.x + .5) * tileSize;
-		tgtZ = (game.player.z + .5) * tileSize;
-		tgtYaw = game.player.facing;
-		if (!initialized) {
-			curX = tgtX;
-			curZ = tgtZ;
-			curYaw = tgtYaw;
-			initialized = true;
-		}
-	};
-	game.events.on("turn", onTurn);
-	let rafId = 0;
-	let lastT = 0;
-	function tick(t) {
-		rafId = requestAnimationFrame(tick);
-		const dt = Math.min((t - lastT) / 1e3, .1);
-		lastT = t;
-		if (initialized) {
-			const k = 1 - Math.pow(1 - lerpFactor, dt * 60);
-			curX += (tgtX - curX) * k;
-			curZ += (tgtZ - curZ) * k;
-			let dy = tgtYaw - curYaw;
-			if (dy > Math.PI) dy -= 2 * Math.PI;
-			if (dy < -Math.PI) dy += 2 * Math.PI;
-			curYaw += dy * k;
-			camera.position.set(curX, ceilingH * EYE_HEIGHT_FACTOR, curZ);
-			camera.rotation.set(0, curYaw, 0, "YXZ");
-			for (const e of currentEntities) {
-				if (!e.alive || !e.spriteMap) continue;
-				const handle = billboardMap.get(e.id);
-				if (handle) handle.update(e, curYaw, tileSize, ceilingH);
-			}
-		}
-		glRenderer.render(scene, camera);
-	}
-	function resize() {
-		const w = element.clientWidth || 1;
-		const h = element.clientHeight || 1;
-		glRenderer.setSize(w, h, false);
-		camera.aspect = w / h;
-		camera.updateProjectionMatrix();
-	}
-	const ro = new ResizeObserver(resize);
-	ro.observe(element);
-	resize();
-	rafId = requestAnimationFrame(tick);
-	return {
-		setEntities(entities) {
-			currentEntities = entities;
-			syncEntities(entities);
-		},
-		createAtlasMaterial() {
-			return atlas ? makeAtlasMaterial(atlas) : null;
-		},
-		addLayer(spec) {
-			const holder = { mesh: null };
-			if (dungeonBuilt) {
-				holder.mesh = buildLayerMesh(spec);
-				if (holder.mesh) scene.add(holder.mesh);
-			}
-			const entry = {
-				spec,
-				holder
-			};
-			layerEntries.push(entry);
-			return { remove() {
-				if (holder.mesh) {
-					scene.remove(holder.mesh);
-					holder.mesh.geometry.dispose();
-					holder.mesh = null;
-				}
-				const i = layerEntries.indexOf(entry);
-				if (i !== -1) layerEntries.splice(i, 1);
-			} };
-		},
-		rebuild() {
-			for (const mesh of [
-				floorMesh,
-				ceilMesh,
-				wallMesh,
-				floorEdgeMesh,
-				ceilEdgeMesh
-			]) if (mesh) {
-				scene.remove(mesh);
-				mesh.geometry.dispose();
-			}
-			floorMesh = ceilMesh = wallMesh = floorEdgeMesh = ceilEdgeMesh = null;
-			for (const entry of layerEntries) if (entry.holder.mesh) {
-				scene.remove(entry.holder.mesh);
-				entry.holder.mesh.geometry.dispose();
-				entry.holder.mesh = null;
-			}
-			dungeonBuilt = false;
-			buildDungeon();
-		},
-		destroy() {
-			cancelAnimationFrame(rafId);
-			ro.disconnect();
-			game.events.off("turn", onTurn);
-			for (const geo of entityGeoCache.values()) geo.dispose();
-			for (const mat of entityMatCache.values()) mat.dispose();
-			for (const handle of billboardMap.values()) handle.dispose();
-			billboardAtlasTex?.dispose();
-			glRenderer.dispose();
-			canvas.remove();
-		}
-	};
+function resolveTile(tile, resolver) {
+	if (typeof tile === "number") return tile;
+	return resolver?.(tile) ?? 0;
 }
 //#endregion
 //#region src/lib/rendering/textureLoader.ts
@@ -3479,6 +2819,31 @@ function toFaceRotation(rotation) {
 		180: 2,
 		270: 1
 	}[rotation] ?? 0;
+}
+/**
+* Convert a PackedSprite's canvas UV coordinates to a GL-convention UV rect.
+* Three.js textures use flipY=true by default, so canvas y=0 (top) becomes
+* GL y=1 (top). The returned rect's y is the GL bottom-left corner of the sprite.
+*/
+function spriteToUvRect(sprite) {
+	return {
+		x: sprite.uvX,
+		y: 1 - sprite.uvY - sprite.uvH,
+		w: sprite.uvW,
+		h: sprite.uvH
+	};
+}
+/**
+* Create a tile-name resolver from a baked PackedAtlas.
+* Pass the returned function as `tileNameResolver` in DungeonRendererOptions.
+*
+* @example
+* const packed = await loadTextureAtlas(src, json);
+* const resolver = packedAtlasResolver(packed);
+* createDungeonRenderer(el, game, { ..., tileNameResolver: resolver });
+*/
+function packedAtlasResolver(atlas) {
+	return (name) => atlas.getByName(name)?.id ?? 0;
 }
 /**
 * Resolve a sprite from a PackedAtlas by either name or insertion-order id.
@@ -3684,6 +3049,698 @@ async function loadTextureAtlas(imageUrl, atlasJson, options = {}) {
 	} finally {
 		overlay?.remove();
 	}
+}
+//#endregion
+//#region src/lib/rendering/billboardSprites.ts
+var BILLBOARD_VERT = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+var BILLBOARD_FRAG = `
+uniform sampler2D uAtlas;
+uniform float uUvX;
+uniform float uUvY;
+uniform float uUvW;
+uniform float uUvH;
+uniform float uOpacity;
+
+varying vec2 vUv;
+
+void main() {
+  vec2 atlasUv = vec2(uUvX + vUv.x * uUvW, uUvY + vUv.y * uUvH);
+  vec4 color = texture2D(uAtlas, atlasUv);
+  if (color.a < 0.01) discard;
+  gl_FragColor = vec4(color.rgb, color.a * uOpacity);
+}
+`;
+var ANGLE_KEYS = [
+	"N",
+	"NE",
+	"E",
+	"SE",
+	"S",
+	"SW",
+	"W",
+	"NW"
+];
+function selectAngleKey(entityFacing, cameraYaw) {
+	const rel = ((entityFacing - cameraYaw) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+	return ANGLE_KEYS[Math.round(rel / (Math.PI / 4)) % 8] ?? "N";
+}
+/**
+* Create a per-entity billboard handle. Call `handle.update()` each RAF frame.
+* The atlas texture should already be created and cached by the caller.
+*/
+function createBillboard(entity, packedAtlas, scene, resolver) {
+	const { spriteMap } = entity;
+	const group = new THREE.Group();
+	scene.add(group);
+	const atlasTex = new THREE.Texture(packedAtlas.texture);
+	atlasTex.magFilter = THREE.NearestFilter;
+	atlasTex.minFilter = THREE.NearestFilter;
+	atlasTex.needsUpdate = true;
+	function getRect(tile) {
+		const id = resolveTile(tile, resolver);
+		const sprite = packedAtlas.getById(id);
+		return sprite ? spriteToUvRect(sprite) : {
+			x: 0,
+			y: 0,
+			w: 0,
+			h: 0
+		};
+	}
+	const layerEntries = spriteMap.layers.map((layer, layerIndex) => {
+		const rect = getRect(layer.tile);
+		const uniforms = {
+			uAtlas: { value: atlasTex },
+			uUvX: { value: rect.x },
+			uUvY: { value: rect.y },
+			uUvW: { value: rect.w },
+			uUvH: { value: rect.h },
+			uOpacity: { value: layer.opacity ?? 1 }
+		};
+		const mat = new THREE.ShaderMaterial({
+			vertexShader: BILLBOARD_VERT,
+			fragmentShader: BILLBOARD_FRAG,
+			uniforms,
+			transparent: true,
+			depthWrite: false,
+			side: THREE.DoubleSide
+		});
+		const geo = new THREE.PlaneGeometry(1, 1);
+		const mesh = new THREE.Mesh(geo, mat);
+		mesh.renderOrder = layerIndex + 1;
+		const s = layer.scale ?? 1;
+		mesh.position.set(layer.offsetX ?? 0, layer.offsetY ?? 0, layerIndex * .001);
+		mesh.scale.set(s, s, 1);
+		group.add(mesh);
+		return {
+			mesh,
+			uniforms,
+			baseLayer: layer,
+			layerIndex
+		};
+	});
+	return {
+		update(ent, cameraYaw, tileSize, ceilingH) {
+			const wx = (ent.x + .5) * tileSize;
+			const wz = (ent.z + .5) * tileSize;
+			const wy = ceilingH * .275;
+			group.position.set(wx, wy, wz);
+			group.rotation.set(0, cameraYaw, 0, "YXZ");
+			const sprW = tileSize * .8;
+			const sprH = ceilingH * .55;
+			const angleKey = selectAngleKey(ent.facing ?? 0, cameraYaw);
+			const overrides = spriteMap.angles?.[angleKey];
+			for (const entry of layerEntries) {
+				const override = overrides?.find((o) => o.layerIndex === entry.layerIndex);
+				const rect = getRect(override?.tile ?? entry.baseLayer.tile);
+				entry.uniforms.uUvX.value = rect.x;
+				entry.uniforms.uUvY.value = rect.y;
+				entry.uniforms.uUvW.value = rect.w;
+				entry.uniforms.uUvH.value = rect.h;
+				entry.uniforms.uOpacity.value = override?.opacity ?? entry.baseLayer.opacity ?? 1;
+				const s = entry.baseLayer.scale ?? 1;
+				entry.mesh.scale.set(sprW * s, sprH * s, 1);
+				entry.mesh.position.set(entry.baseLayer.offsetX ?? 0, entry.baseLayer.offsetY ?? 0, entry.layerIndex * .001);
+			}
+		},
+		dispose() {
+			scene.remove(group);
+			for (const entry of layerEntries) {
+				entry.mesh.geometry.dispose();
+				entry.mesh.material.dispose();
+			}
+		}
+	};
+}
+//#endregion
+//#region src/lib/rendering/dungeonRenderer.ts
+/**
+* dungeonRenderer.ts
+*
+* Plain Three.js first-person dungeon renderer — no React or R3F required.
+* Designed for script-tag usage: create it after `game.generate()` is wired
+* up, and it will visualise the dungeon and player/entity positions.
+*
+* Usage (plain colours):
+*   const renderer = createDungeonRenderer(document.getElementById('viewport'), game);
+*
+* Usage (tile atlas):
+*   const packed = await loadTextureAtlas('sprites.png', atlasJson);
+*   const resolver = packedAtlasResolver(packed);
+*   const renderer = createDungeonRenderer(el, game, {
+*     packedAtlas: packed,
+*     tileNameResolver: resolver,
+*     floorTile: 'stone_floor',
+*     ceilTile:  'ceiling_stone',
+*     wallTile:  'brick_wall',
+*   });
+*
+*   // Pass live entity list on every turn:
+*   game.events.on('turn', () => renderer.setEntities(enemies));
+*/
+var HALF_PI = Math.PI / 2;
+/** Eye height as a fraction of ceiling height (same as PerspectiveDungeonView). */
+var EYE_HEIGHT_FACTOR = .66;
+function makeFaceMatrix(x, y, z, rx, ry, rz, w, h) {
+	return new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(w, h, 1));
+}
+/**
+* Build a PlaneGeometry with a pre-allocated aTileId InstancedBufferAttribute,
+* and an InstancedMesh using either a ShaderMaterial (atlas) or a plain material.
+*/
+function buildInstancedMesh(matrices, uvRects, material, useAtlas, heightOffsets, uvRotations, uvHeightScales) {
+	const geo = new THREE.PlaneGeometry(1, 1);
+	if (useAtlas) {
+		const n = matrices.length;
+		const uvXArr = new Float32Array(n);
+		const uvYArr = new Float32Array(n);
+		const uvWArr = new Float32Array(n);
+		const uvHArr = new Float32Array(n);
+		uvRects.forEach((r, i) => {
+			uvXArr[i] = r.x;
+			uvYArr[i] = r.y;
+			uvWArr[i] = r.w;
+			uvHArr[i] = r.h;
+		});
+		geo.setAttribute("aUvX", new THREE.InstancedBufferAttribute(uvXArr, 1));
+		geo.setAttribute("aUvY", new THREE.InstancedBufferAttribute(uvYArr, 1));
+		geo.setAttribute("aUvW", new THREE.InstancedBufferAttribute(uvWArr, 1));
+		geo.setAttribute("aUvH", new THREE.InstancedBufferAttribute(uvHArr, 1));
+		const offsets = heightOffsets ?? new Float32Array(matrices.length);
+		geo.setAttribute("aHeightOffset", new THREE.InstancedBufferAttribute(offsets, 1));
+		const rotArr = new Float32Array(matrices.length);
+		if (uvRotations) uvRotations.forEach((r, i) => {
+			rotArr[i] = r;
+		});
+		geo.setAttribute("aUvRotation", new THREE.InstancedBufferAttribute(rotArr, 1));
+		const hsArr = new Float32Array(matrices.length).fill(1);
+		if (uvHeightScales) uvHeightScales.forEach((s, i) => {
+			hsArr[i] = s;
+		});
+		geo.setAttribute("aUvHeightScale", new THREE.InstancedBufferAttribute(hsArr, 1));
+	}
+	const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
+	matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+	mesh.instanceMatrix.needsUpdate = true;
+	return mesh;
+}
+function createDungeonRenderer(element, game, options = {}) {
+	const tileSize = options.tileSize ?? 3;
+	const ceilingH = options.ceilingHeight ?? 3;
+	const fov = options.fov ?? 75;
+	const fogNear = options.fogNear ?? 5;
+	const fogFar = options.fogFar ?? 24;
+	const fogHex = options.fogColor ?? "#000000";
+	const lerpFactor = options.lerpFactor ?? .18;
+	const fogColor = new THREE.Color(fogHex);
+	const packedAtlas = options.packedAtlas;
+	const resolver = options.tileNameResolver;
+	function getUvRect(id) {
+		const sprite = packedAtlas?.getById(id);
+		return sprite ? spriteToUvRect(sprite) : {
+			x: 0,
+			y: 0,
+			w: 0,
+			h: 0
+		};
+	}
+	const floorId = resolveTile(options.floorTile ?? 0, resolver);
+	const ceilId = resolveTile(options.ceilTile ?? 0, resolver);
+	const wallId = resolveTile(options.wallTile ?? 0, resolver);
+	const wallTiles = options.wallTiles;
+	const floorSkirtTiles = options.floorSkirtTiles;
+	const ceilSkirtTiles = options.ceilSkirtTiles;
+	const glRenderer = new THREE.WebGLRenderer({ antialias: false });
+	glRenderer.setPixelRatio(window.devicePixelRatio);
+	glRenderer.setClearColor(fogColor);
+	const canvas = glRenderer.domElement;
+	canvas.style.cssText = "width:100%;height:100%;display:block;";
+	element.appendChild(canvas);
+	const scene = new THREE.Scene();
+	scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+	const camera = new THREE.PerspectiveCamera(fov, 1, .05, fogFar * 2);
+	scene.add(new THREE.AmbientLight(16777215, 1));
+	const dirLight = new THREE.DirectionalLight(16777215, .6);
+	dirLight.position.set(.5, 1, .75);
+	scene.add(dirLight);
+	let sharedAtlasTex = null;
+	if (packedAtlas) {
+		sharedAtlasTex = new THREE.Texture(packedAtlas.texture);
+		sharedAtlasTex.magFilter = THREE.NearestFilter;
+		sharedAtlasTex.minFilter = THREE.NearestFilter;
+		sharedAtlasTex.needsUpdate = true;
+	}
+	function makeAtlasMaterial() {
+		const canvas = packedAtlas.texture;
+		return new THREE.ShaderMaterial({
+			vertexShader: BASIC_ATLAS_VERT,
+			fragmentShader: BASIC_ATLAS_FRAG,
+			uniforms: makeBasicAtlasUniforms({
+				atlas: sharedAtlasTex,
+				texelSize: new THREE.Vector2(1 / canvas.width, 1 / canvas.height),
+				fogColor,
+				fogNear,
+				fogFar
+			}),
+			side: THREE.FrontSide
+		});
+	}
+	function makeAtlasMaterialDoubleSide() {
+		const mat = makeAtlasMaterial();
+		mat.side = THREE.DoubleSide;
+		return mat;
+	}
+	const floorMat = packedAtlas ? makeAtlasMaterial() : new THREE.MeshStandardMaterial({ color: 5592422 });
+	const ceilMat = packedAtlas ? makeAtlasMaterial() : new THREE.MeshStandardMaterial({ color: 2236979 });
+	const wallMat = packedAtlas ? makeAtlasMaterial() : new THREE.MeshStandardMaterial({ color: 7037040 });
+	const ceilEdgeMat = packedAtlas ? makeAtlasMaterialDoubleSide() : new THREE.MeshStandardMaterial({
+		color: 2236979,
+		side: THREE.DoubleSide
+	});
+	let floorMesh = null;
+	let ceilMesh = null;
+	let wallMesh = null;
+	let floorEdgeMesh = null;
+	let ceilEdgeMesh = null;
+	let dungeonBuilt = false;
+	const layerEntries = [];
+	/** Build an instanced mesh for a single LayerSpec by scanning the dungeon map. */
+	function buildLayerMesh(spec) {
+		const outputs = game.dungeon.outputs;
+		if (!outputs) return null;
+		const { width, height } = outputs;
+		const solid = outputs.textures.solid.image.data;
+		const floorOffData = outputs.textures.floorHeightOffset?.image.data;
+		const ceilOffData = outputs.textures.ceilingHeightOffset?.image.data;
+		const wallMidY = ceilingH / 2;
+		const offsetStep = tileSize * .5;
+		const matrices = [];
+		const uvRects = [];
+		const rotations = [];
+		const offsets = [];
+		const heightScales = [];
+		const filter = spec.filter ?? (() => ({ tile: 0 }));
+		function isSolid(cx, cz) {
+			if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
+			return (solid[cz * width + cx] ?? 0) > 0;
+		}
+		function openFloorVal(ncx, ncz) {
+			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+			if (isSolid(ncx, ncz)) return null;
+			return floorOffData ? floorOffData[ncz * width + ncx] ?? 128 : 128;
+		}
+		function openCeilVal(ncx, ncz) {
+			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+			if (isSolid(ncx, ncz)) return null;
+			return ceilOffData ? ceilOffData[ncz * width + ncx] ?? 128 : 128;
+		}
+		function tryAdd(result, matrix, offset = 0, hs = 1) {
+			if (!result) return;
+			matrices.push(matrix);
+			const id = result.tile !== void 0 ? resolveTile(result.tile, resolver) : 0;
+			uvRects.push(getUvRect(id));
+			rotations.push(result.rotation ?? 0);
+			offsets.push(offset);
+			heightScales.push(hs);
+		}
+		for (let cz = 0; cz < height; cz++) for (let cx = 0; cx < width; cx++) {
+			if (isSolid(cx, cz)) continue;
+			const idx = cz * width + cx;
+			const wx = (cx + .5) * tileSize;
+			const wz = (cz + .5) * tileSize;
+			const floorVal = floorOffData ? floorOffData[idx] ?? 128 : 128;
+			const ceilVal = ceilOffData ? ceilOffData[idx] ?? 128 : 128;
+			if (spec.target === "floor" && floorVal !== 0) tryAdd(filter(cx, cz, void 0), makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize), (floorVal - 128) * offsetStep);
+			if (spec.target === "ceil") tryAdd(filter(cx, cz, void 0), makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize), -(ceilVal - 128) * offsetStep);
+			if (spec.target === "wall") {
+				if (isSolid(cx, cz - 1)) tryAdd(filter(cx, cz, "north"), makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
+				if (isSolid(cx, cz + 1)) tryAdd(filter(cx, cz, "south"), makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH));
+				if (isSolid(cx - 1, cz)) tryAdd(filter(cx, cz, "west"), makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH));
+				if (isSolid(cx + 1, cz)) tryAdd(filter(cx, cz, "east"), makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
+			}
+			if (spec.target === "floorSkirt" && floorVal !== 0) {
+				const feMidY = -tileSize / 2;
+				const nfN = openFloorVal(cx, cz - 1);
+				if (nfN !== null && nfN < floorVal) tryAdd(filter(cx, cz, "north"), makeFaceMatrix(wx, feMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
+				const nfS = openFloorVal(cx, cz + 1);
+				if (nfS !== null && nfS < floorVal) tryAdd(filter(cx, cz, "south"), makeFaceMatrix(wx, feMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
+				const nfW = openFloorVal(cx - 1, cz);
+				if (nfW !== null && nfW < floorVal) tryAdd(filter(cx, cz, "west"), makeFaceMatrix(cx * tileSize, feMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
+				const nfE = openFloorVal(cx + 1, cz);
+				if (nfE !== null && nfE < floorVal) tryAdd(filter(cx, cz, "east"), makeFaceMatrix((cx + 1) * tileSize, feMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
+			}
+			if (spec.target === "ceilSkirt") {
+				const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
+				const addCS = (ncVal, mx, mz, ry, dir) => {
+					if (ncVal === null || ncVal <= ceilVal) return;
+					const h = (ncVal - ceilVal) * offsetStep;
+					const midY = yCurrent - h / 2;
+					tryAdd(filter(cx, cz, dir), makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h), 0, h / tileSize);
+				};
+				addCS(openCeilVal(cx, cz - 1), wx, cz * tileSize, Math.PI, "north");
+				addCS(openCeilVal(cx, cz + 1), wx, (cz + 1) * tileSize, 0, "south");
+				addCS(openCeilVal(cx - 1, cz), cx * tileSize, wz, -HALF_PI, "west");
+				addCS(openCeilVal(cx + 1, cz), (cx + 1) * tileSize, wz, HALF_PI, "east");
+			}
+		}
+		if (matrices.length === 0) return null;
+		const useAtlas = spec.useAtlas ?? !!packedAtlas;
+		const mesh = buildInstancedMesh(matrices, uvRects, spec.material, useAtlas, new Float32Array(offsets), rotations, spec.target === "ceilSkirt" ? heightScales : void 0);
+		if (spec.polygonOffset !== false) {
+			spec.material.polygonOffset = true;
+			spec.material.polygonOffsetFactor = -1;
+			spec.material.polygonOffsetUnits = -1;
+		}
+		mesh.renderOrder = 1;
+		return mesh;
+	}
+	function buildDungeon() {
+		if (dungeonBuilt) return;
+		const outputs = game.dungeon.outputs;
+		if (!outputs) return;
+		dungeonBuilt = true;
+		const { width, height } = outputs;
+		const solid = outputs.textures.solid.image.data;
+		const wallMidY = ceilingH / 2;
+		const offsetStep = tileSize * .5;
+		const floorOffData = outputs.textures.floorHeightOffset?.image.data;
+		const ceilOffData = outputs.textures.ceilingHeightOffset?.image.data;
+		function spec(map, dir, fallbackId) {
+			return map?.[dir] ?? {
+				tile: fallbackId,
+				rotation: 0
+			};
+		}
+		const floors = [];
+		const ceils = [];
+		const walls = [];
+		const floorEdges = [];
+		const ceilEdges = [];
+		const floorRects = [];
+		const ceilRects = [];
+		const wallRects = [];
+		const floorEdgeRects = [];
+		const ceilEdgeRects = [];
+		const floorOffsets = [];
+		const ceilOffsets = [];
+		const wallRots = [];
+		const floorEdgeRots = [];
+		const ceilEdgeRots = [];
+		const ceilEdgeHeightScales = [];
+		function isSolid(cx, cz) {
+			if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
+			return (solid[cz * width + cx] ?? 0) > 0;
+		}
+		function openFloorVal(ncx, ncz) {
+			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+			if (isSolid(ncx, ncz)) return null;
+			const nidx = ncz * width + ncx;
+			return floorOffData ? floorOffData[nidx] ?? 128 : 128;
+		}
+		function openCeilVal(ncx, ncz) {
+			if (ncx < 0 || ncz < 0 || ncx >= width || ncz >= height) return null;
+			if (isSolid(ncx, ncz)) return null;
+			const nidx = ncz * width + ncx;
+			return ceilOffData ? ceilOffData[nidx] ?? 128 : 128;
+		}
+		for (let cz = 0; cz < height; cz++) for (let cx = 0; cx < width; cx++) {
+			if (isSolid(cx, cz)) continue;
+			const idx = cz * width + cx;
+			const wx = (cx + .5) * tileSize;
+			const wz = (cz + .5) * tileSize;
+			const floorVal = floorOffData ? floorOffData[idx] ?? 128 : 128;
+			if (floorVal !== 0) {
+				floors.push(makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize));
+				floorRects.push(getUvRect(floorId));
+				floorOffsets.push((floorVal - 128) * offsetStep);
+			}
+			const ceilVal = ceilOffData ? ceilOffData[idx] ?? 128 : 128;
+			ceils.push(makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize));
+			ceilRects.push(getUvRect(ceilId));
+			ceilOffsets.push(-(ceilVal - 128) * offsetStep);
+			if (isSolid(cx, cz - 1)) {
+				const s = spec(wallTiles, "north", wallId);
+				walls.push(makeFaceMatrix(wx, wallMidY, cz * tileSize, 0, 0, 0, tileSize, ceilingH));
+				wallRects.push(getUvRect(resolveTile(s.tile, resolver)));
+				wallRots.push(s.rotation ?? 0);
+			}
+			if (isSolid(cx, cz + 1)) {
+				const s = spec(wallTiles, "south", wallId);
+				walls.push(makeFaceMatrix(wx, wallMidY, (cz + 1) * tileSize, 0, Math.PI, 0, tileSize, ceilingH));
+				wallRects.push(getUvRect(resolveTile(s.tile, resolver)));
+				wallRots.push(s.rotation ?? 0);
+			}
+			if (isSolid(cx - 1, cz)) {
+				const s = spec(wallTiles, "west", wallId);
+				walls.push(makeFaceMatrix(cx * tileSize, wallMidY, wz, 0, HALF_PI, 0, tileSize, ceilingH));
+				wallRects.push(getUvRect(resolveTile(s.tile, resolver)));
+				wallRots.push(s.rotation ?? 0);
+			}
+			if (isSolid(cx + 1, cz)) {
+				const s = spec(wallTiles, "east", wallId);
+				walls.push(makeFaceMatrix((cx + 1) * tileSize, wallMidY, wz, 0, -HALF_PI, 0, tileSize, ceilingH));
+				wallRects.push(getUvRect(resolveTile(s.tile, resolver)));
+				wallRots.push(s.rotation ?? 0);
+			}
+			if (floorVal !== 0) {
+				const feMidY = -tileSize / 2;
+				const nfN = openFloorVal(cx, cz - 1);
+				if (nfN !== null && nfN < floorVal) {
+					const s = spec(floorSkirtTiles, "north", floorId);
+					floorEdges.push(makeFaceMatrix(wx, feMidY, cz * tileSize, 0, Math.PI, 0, tileSize, tileSize));
+					floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+					floorEdgeRots.push(s.rotation ?? 0);
+				}
+				const nfS = openFloorVal(cx, cz + 1);
+				if (nfS !== null && nfS < floorVal) {
+					const s = spec(floorSkirtTiles, "south", floorId);
+					floorEdges.push(makeFaceMatrix(wx, feMidY, (cz + 1) * tileSize, 0, 0, 0, tileSize, tileSize));
+					floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+					floorEdgeRots.push(s.rotation ?? 0);
+				}
+				const nfW = openFloorVal(cx - 1, cz);
+				if (nfW !== null && nfW < floorVal) {
+					const s = spec(floorSkirtTiles, "west", floorId);
+					floorEdges.push(makeFaceMatrix(cx * tileSize, feMidY, wz, 0, -HALF_PI, 0, tileSize, tileSize));
+					floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+					floorEdgeRots.push(s.rotation ?? 0);
+				}
+				const nfE = openFloorVal(cx + 1, cz);
+				if (nfE !== null && nfE < floorVal) {
+					const s = spec(floorSkirtTiles, "east", floorId);
+					floorEdges.push(makeFaceMatrix((cx + 1) * tileSize, feMidY, wz, 0, HALF_PI, 0, tileSize, tileSize));
+					floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+					floorEdgeRots.push(s.rotation ?? 0);
+				}
+			}
+			const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
+			function addCeilSkirt(ncVal, mx, mz, ry, dir) {
+				const s = spec(ceilSkirtTiles, dir, ceilId);
+				const h = (ncVal - ceilVal) * offsetStep;
+				const midY = yCurrent - h / 2;
+				ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
+				ceilEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+				ceilEdgeRots.push(s.rotation ?? 0);
+				ceilEdgeHeightScales.push(h / tileSize);
+			}
+			const ncN = openCeilVal(cx, cz - 1);
+			if (ncN !== null && ncN > ceilVal) addCeilSkirt(ncN, wx, cz * tileSize, Math.PI, "north");
+			const ncS = openCeilVal(cx, cz + 1);
+			if (ncS !== null && ncS > ceilVal) addCeilSkirt(ncS, wx, (cz + 1) * tileSize, 0, "south");
+			const ncW = openCeilVal(cx - 1, cz);
+			if (ncW !== null && ncW > ceilVal) addCeilSkirt(ncW, cx * tileSize, wz, -HALF_PI, "west");
+			const ncE = openCeilVal(cx + 1, cz);
+			if (ncE !== null && ncE > ceilVal) addCeilSkirt(ncE, (cx + 1) * tileSize, wz, HALF_PI, "east");
+		}
+		floorMesh = buildInstancedMesh(floors, floorRects, floorMat, !!packedAtlas, new Float32Array(floorOffsets));
+		scene.add(floorMesh);
+		ceilMesh = buildInstancedMesh(ceils, ceilRects, ceilMat, !!packedAtlas, new Float32Array(ceilOffsets));
+		scene.add(ceilMesh);
+		wallMesh = buildInstancedMesh(walls, wallRects, wallMat, !!packedAtlas, void 0, wallRots);
+		scene.add(wallMesh);
+		floorEdgeMesh = buildInstancedMesh(floorEdges, floorEdgeRects, floorMat, !!packedAtlas, void 0, floorEdgeRots);
+		scene.add(floorEdgeMesh);
+		ceilEdgeMesh = buildInstancedMesh(ceilEdges, ceilEdgeRects, ceilEdgeMat, !!packedAtlas, void 0, ceilEdgeRots, ceilEdgeHeightScales);
+		scene.add(ceilEdgeMesh);
+		for (const entry of layerEntries) if (!entry.holder.mesh) {
+			entry.holder.mesh = buildLayerMesh(entry.spec);
+			if (entry.holder.mesh) scene.add(entry.holder.mesh);
+		}
+	}
+	const appearances = options.entityAppearances ?? {};
+	const entityGeoCache = /* @__PURE__ */ new Map();
+	const entityMatCache = /* @__PURE__ */ new Map();
+	function resolveAppearanceKey(e) {
+		if (appearances[e.type]) return e.type;
+		if (appearances[e.kind]) return e.kind;
+		return "__default__";
+	}
+	function getEntityGeo(key) {
+		if (!entityGeoCache.has(key)) {
+			const spec = appearances[key] ?? {};
+			const wf = spec.widthFactor ?? .35;
+			const hf = spec.heightFactor ?? .55;
+			const df = spec.depthFactor ?? wf;
+			entityGeoCache.set(key, new THREE.BoxGeometry(tileSize * wf, ceilingH * hf, tileSize * df));
+		}
+		return entityGeoCache.get(key);
+	}
+	function getEntityMat(key) {
+		if (!entityMatCache.has(key)) {
+			const spec = appearances[key] ?? {};
+			entityMatCache.set(key, new THREE.MeshStandardMaterial({ color: spec.color ?? 13378082 }));
+		}
+		return entityMatCache.get(key);
+	}
+	const entityMeshMap = /* @__PURE__ */ new Map();
+	const billboardMap = /* @__PURE__ */ new Map();
+	function syncEntities(entities) {
+		const aliveIds = new Set(entities.filter((e) => e.alive).map((e) => e.id));
+		for (const [id, mesh] of entityMeshMap) if (!aliveIds.has(id)) {
+			scene.remove(mesh);
+			entityMeshMap.delete(id);
+		}
+		for (const [id, handle] of billboardMap) if (!aliveIds.has(id)) {
+			handle.dispose();
+			billboardMap.delete(id);
+		}
+		for (const e of entities) {
+			if (!e.alive) continue;
+			if (e.spriteMap) {
+				if (!billboardMap.has(e.id) && packedAtlas) {
+					const handle = createBillboard(e, packedAtlas, scene, resolver);
+					billboardMap.set(e.id, handle);
+				}
+			} else {
+				const key = resolveAppearanceKey(e);
+				if (!entityMeshMap.has(e.id)) {
+					const mesh = new THREE.Mesh(getEntityGeo(key), getEntityMat(key));
+					entityMeshMap.set(e.id, mesh);
+					scene.add(mesh);
+				}
+				const hf = (appearances[key] ?? {}).heightFactor ?? .55;
+				entityMeshMap.get(e.id).position.set((e.x + .5) * tileSize, ceilingH * hf / 2, (e.z + .5) * tileSize);
+			}
+		}
+	}
+	let currentEntities = [];
+	let tgtX = 0, tgtZ = 0, tgtYaw = 0;
+	let curX = 0, curZ = 0, curYaw = 0;
+	let initialized = false;
+	const onTurn = () => {
+		buildDungeon();
+		tgtX = (game.player.x + .5) * tileSize;
+		tgtZ = (game.player.z + .5) * tileSize;
+		tgtYaw = game.player.facing;
+		if (!initialized) {
+			curX = tgtX;
+			curZ = tgtZ;
+			curYaw = tgtYaw;
+			initialized = true;
+		}
+	};
+	game.events.on("turn", onTurn);
+	let rafId = 0;
+	let lastT = 0;
+	function tick(t) {
+		rafId = requestAnimationFrame(tick);
+		const dt = Math.min((t - lastT) / 1e3, .1);
+		lastT = t;
+		if (initialized) {
+			const k = 1 - Math.pow(1 - lerpFactor, dt * 60);
+			curX += (tgtX - curX) * k;
+			curZ += (tgtZ - curZ) * k;
+			let dy = tgtYaw - curYaw;
+			if (dy > Math.PI) dy -= 2 * Math.PI;
+			if (dy < -Math.PI) dy += 2 * Math.PI;
+			curYaw += dy * k;
+			camera.position.set(curX, ceilingH * EYE_HEIGHT_FACTOR, curZ);
+			camera.rotation.set(0, curYaw, 0, "YXZ");
+			for (const e of currentEntities) {
+				if (!e.alive || !e.spriteMap) continue;
+				const handle = billboardMap.get(e.id);
+				if (handle) handle.update(e, curYaw, tileSize, ceilingH);
+			}
+		}
+		glRenderer.render(scene, camera);
+	}
+	function resize() {
+		const w = element.clientWidth || 1;
+		const h = element.clientHeight || 1;
+		glRenderer.setSize(w, h, false);
+		camera.aspect = w / h;
+		camera.updateProjectionMatrix();
+	}
+	const ro = new ResizeObserver(resize);
+	ro.observe(element);
+	resize();
+	rafId = requestAnimationFrame(tick);
+	return {
+		setEntities(entities) {
+			currentEntities = entities;
+			syncEntities(entities);
+		},
+		createAtlasMaterial() {
+			return packedAtlas ? makeAtlasMaterial() : null;
+		},
+		addLayer(spec) {
+			const holder = { mesh: null };
+			if (dungeonBuilt) {
+				holder.mesh = buildLayerMesh(spec);
+				if (holder.mesh) scene.add(holder.mesh);
+			}
+			const entry = {
+				spec,
+				holder
+			};
+			layerEntries.push(entry);
+			return { remove() {
+				if (holder.mesh) {
+					scene.remove(holder.mesh);
+					holder.mesh.geometry.dispose();
+					holder.mesh = null;
+				}
+				const i = layerEntries.indexOf(entry);
+				if (i !== -1) layerEntries.splice(i, 1);
+			} };
+		},
+		rebuild() {
+			for (const mesh of [
+				floorMesh,
+				ceilMesh,
+				wallMesh,
+				floorEdgeMesh,
+				ceilEdgeMesh
+			]) if (mesh) {
+				scene.remove(mesh);
+				mesh.geometry.dispose();
+			}
+			floorMesh = ceilMesh = wallMesh = floorEdgeMesh = ceilEdgeMesh = null;
+			for (const entry of layerEntries) if (entry.holder.mesh) {
+				scene.remove(entry.holder.mesh);
+				entry.holder.mesh.geometry.dispose();
+				entry.holder.mesh = null;
+			}
+			dungeonBuilt = false;
+			buildDungeon();
+		},
+		destroy() {
+			cancelAnimationFrame(rafId);
+			ro.disconnect();
+			game.events.off("turn", onTurn);
+			for (const geo of entityGeoCache.values()) geo.dispose();
+			for (const mat of entityMatCache.values()) mat.dispose();
+			for (const handle of billboardMap.values()) handle.dispose();
+			sharedAtlasTex?.dispose();
+			glRenderer.dispose();
+			canvas.remove();
+		}
+	};
 }
 //#endregion
 //#region src/lib/dungeon/themes.ts
@@ -4470,6 +4527,6 @@ function showInventory(opts = {}) {
 	return handle;
 }
 //#endregion
-export { THEMES, THEME_KEYS, attachDecorator, attachKeybindings, attachMinimap, attachSpawner, attachSurfacePainter, createDecoration, createDungeonRenderer, createEnemy, createGame, createItem, createNpc, createWebSocketTransport, getTheme, loadMultiAtlas, loadTextureAtlas, loadTiledMap, registerTheme, resolveSprite, resolveTheme, showInventory, toFaceRotation };
+export { THEMES, THEME_KEYS, attachDecorator, attachKeybindings, attachMinimap, attachSpawner, attachSurfacePainter, createDecoration, createDungeonRenderer, createEnemy, createGame, createItem, createNpc, createWebSocketTransport, getTheme, loadMultiAtlas, loadTextureAtlas, loadTiledMap, packedAtlasResolver, registerTheme, resolveSprite, resolveTheme, showInventory, spriteToUvRect, toFaceRotation };
 
 //# sourceMappingURL=atomic-core.js.map

@@ -12,24 +12,22 @@ import * as THREE from "three";
  * Handles aTileId UV lookup, aHeightOffset, and fog distance.
  */
 export const BASIC_ATLAS_VERT = /* glsl */ `
-attribute float aTileId;
+attribute float aUvX;
+attribute float aUvY;
+attribute float aUvW;
+attribute float aUvH;
 attribute float aHeightOffset;
 attribute float aUvRotation;
 // 1.0 = full tile; < 1.0 = show only that fraction of the tile, top-aligned.
 // Used for partial-height skirt panels so bricks keep their aspect ratio.
 attribute float aUvHeightScale;
-uniform vec2  uTileSize;
-uniform float uColumns;
 
 varying vec2  vAtlasUv;
 varying vec2  vTileOrigin;
+varying vec2  vTileSize;
 varying float vFogDist;
 
 void main() {
-  float id  = floor(aTileId + 0.5);
-  float col = mod(id, uColumns);
-  float row = floor(id / uColumns);
-
   // Scale face height dimension BEFORE rotation so it always affects the
   // physical height axis of the face, regardless of UV rotation.
   float hs = clamp(aUvHeightScale, 0.0, 1.0);
@@ -41,9 +39,9 @@ void main() {
   else if (iRot == 2) localUv = vec2(1.0 - localUv.x, 1.0 - localUv.y);
   else if (iRot == 3) localUv = vec2(1.0 - localUv.y, localUv.x);
 
-  vec2 offset = vec2(col * uTileSize.x, 1.0 - (row + 1.0) * uTileSize.y);
-  vAtlasUv    = offset + localUv * uTileSize;
-  vTileOrigin = offset;
+  vTileOrigin = vec2(aUvX, aUvY);
+  vTileSize   = vec2(aUvW, aUvH);
+  vAtlasUv    = vTileOrigin + localUv * vTileSize;
 
   vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
   worldPos.y   += aHeightOffset;
@@ -61,7 +59,6 @@ void main() {
  */
 export const BASIC_ATLAS_FRAG = /* glsl */ `
 uniform sampler2D uAtlas;
-uniform vec2  uTileSize;
 uniform vec2  uTexelSize;
 uniform vec3  uFogColor;
 uniform float uFogNear;
@@ -69,11 +66,12 @@ uniform float uFogFar;
 
 varying vec2  vAtlasUv;
 varying vec2  vTileOrigin;
+varying vec2  vTileSize;
 varying float vFogDist;
 
 void main() {
   vec2 uvMin   = vTileOrigin + uTexelSize * 0.5;
-  vec2 uvMax   = vTileOrigin + uTileSize  - uTexelSize * 0.5;
+  vec2 uvMax   = vTileOrigin + vTileSize  - uTexelSize * 0.5;
   vec2 atlasUv = clamp(vAtlasUv, uvMin, uvMax);
 
   vec4 color = texture2D(uAtlas, atlasUv);
@@ -128,18 +126,14 @@ void main() {
  */
 export function makeBasicAtlasUniforms(params: {
   atlas: THREE.Texture;
-  tileSize: THREE.Vector2;
   texelSize: THREE.Vector2;
-  columns: number;
   fogColor: THREE.Color;
   fogNear: number;
   fogFar: number;
 }): Record<string, { value: unknown }> {
   return {
     uAtlas:    { value: params.atlas },
-    uTileSize: { value: params.tileSize },
     uTexelSize:{ value: params.texelSize },
-    uColumns:  { value: params.columns },
     uFogColor: { value: params.fogColor },
     uFogNear:  { value: params.fogNear },
     uFogFar:   { value: params.fogFar },

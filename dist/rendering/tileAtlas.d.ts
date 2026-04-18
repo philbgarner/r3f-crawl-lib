@@ -6,10 +6,18 @@ export type FaceRotation = 0 | 1 | 2 | 3;
  * on all four directions without visible seams.
  */
 export type FaceTileSpec = {
-    tileId: number;
+    /** Atlas tile: pass a string name (resolved via tileNameResolver) or a numeric id directly. */
+    tile: string | number;
     /** UV rotation within the tile (0–3). Default: 0. */
     rotation?: FaceRotation;
 };
+/**
+ * Resolve a tile specifier to a numeric ID.
+ * If `tile` is already a number, return it as-is.
+ * If `tile` is a string, call `resolver` to look it up.
+ * Returns 0 when the resolver returns undefined (safe fallback).
+ */
+export declare function resolveTile(tile: string | number, resolver: ((name: string) => number) | undefined): number;
 /**
  * Per-direction tile overrides for walls or skirt faces.
  * Any direction not specified falls back to the caller's default tile ID.

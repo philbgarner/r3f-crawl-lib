@@ -9,16 +9,14 @@
  *   const renderer = createDungeonRenderer(document.getElementById('viewport'), game);
  *
  * Usage (tile atlas):
+ *   const packed = await loadTextureAtlas('sprites.png', atlasJson);
+ *   const resolver = packedAtlasResolver(packed);
  *   const renderer = createDungeonRenderer(el, game, {
- *     atlas: {
- *       texture,
- *       tileWidth: 16, tileHeight: 16,
- *       sheetWidth: 256, sheetHeight: 256,
- *       columns: 16,
- *     },
- *     floorTileId: 0,
- *     ceilTileId: 1,
- *     wallTileId: 2,
+ *     packedAtlas: packed,
+ *     tileNameResolver: resolver,
+ *     floorTile: 'stone_floor',
+ *     ceilTile:  'ceiling_stone',
+ *     wallTile:  'brick_wall',
  *   });
  *
  *   // Pass live entity list on every turn:
@@ -34,7 +32,10 @@ import {
   makeBasicAtlasUniforms,
 } from "./basicLighting";
 import type { FaceTileSpec, DirectionFaceMap } from "./tileAtlas";
+import { resolveTile } from "./tileAtlas";
 export type { FaceTileSpec, DirectionFaceMap } from "./tileAtlas";
+import type { PackedAtlas, UvRect } from "./textureLoader";
+import { spriteToUvRect } from "./textureLoader";
 import { createBillboard } from "./billboardSprites";
 import type { BillboardHandle, SpriteMap } from "./billboardSprites";
 export type { SpriteMap } from "./billboardSprites";
@@ -42,26 +43,6 @@ export type { SpriteMap } from "./billboardSprites";
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
-
-/** Describes a sprite-sheet atlas used for tile texturing. */
-export type TileAtlasConfig = {
-  /**
-   * Pre-loaded sprite sheet image.  Pass an HTMLImageElement so the texture
-   * is created by the renderer's own bundled Three.js instance, avoiding
-   * cross-instance mismatch when Three.js is also imported as a global.
-   */
-  image: HTMLImageElement;
-  /** Width of a single tile in pixels. */
-  tileWidth: number;
-  /** Height of a single tile in pixels. */
-  tileHeight: number;
-  /** Total width of the sprite sheet in pixels. */
-  sheetWidth: number;
-  /** Total height of the sprite sheet in pixels. */
-  sheetHeight: number;
-  /** Number of tile columns in the sprite sheet. */
-  columns: number;
-};
 
 export type DungeonRendererOptions = {
   /** Camera field of view in degrees. Default: 75. */
@@ -78,31 +59,35 @@ export type DungeonRendererOptions = {
   fogColor?: string;
   /** Smoothing factor for camera animation (0 = instant, 1 = never arrives). Default: 0.18. */
   lerpFactor?: number;
+  /** When provided the dungeon geometry uses the packed atlas shader instead of plain MeshStandardMaterial. */
+  packedAtlas?: PackedAtlas;
   /**
-   * When provided the dungeon geometry uses the tile atlas shader instead of
-   * plain MeshStandardMaterial.  Requires floorTileId / ceilTileId / wallTileId.
+   * Converts a string tile name to a numeric atlas tile ID.
+   * Required when any tile option is specified as a string name.
+   * Use `packedAtlasResolver(packed)` for baked-texture atlases,
+   * or provide a custom function wrapping AtlasIndex.someCategory.idByName().
    */
-  atlas?: TileAtlasConfig;
-  /** Atlas tile index (0-based) for floor faces. Default: 0. */
-  floorTileId?: number;
-  /** Atlas tile index (0-based) for ceiling faces. Default: 0. */
-  ceilTileId?: number;
-  /** Atlas tile index (0-based) for wall faces. Default: 0. */
-  wallTileId?: number;
+  tileNameResolver?: (name: string) => number;
+  /** Floor tile: string name (resolved via tileNameResolver) or numeric tile index. Default: 0. */
+  floorTile?: string | number;
+  /** Ceiling tile: string name or numeric tile index. Default: 0. */
+  ceilTile?: string | number;
+  /** Wall tile: string name or numeric tile index. Default: 0. */
+  wallTile?: string | number;
   /**
    * Per-direction tile overrides for wall faces.
-   * Each entry may specify a different tile ID and/or UV rotation (0–3 × 90°).
-   * Falls back to `wallTileId` for any direction not specified.
+   * Each entry may specify a different tile and/or UV rotation (0–3 × 90°).
+   * Falls back to `wallTile` for any direction not specified.
    */
   wallTiles?: DirectionFaceMap;
   /**
    * Per-direction tile overrides for floor skirt (edge) faces.
-   * Falls back to `floorTileId` for any direction not specified.
+   * Falls back to `floorTile` for any direction not specified.
    */
   floorSkirtTiles?: DirectionFaceMap;
   /**
    * Per-direction tile overrides for ceiling skirt (edge) faces.
-   * Falls back to `ceilTileId` for any direction not specified.
+   * Falls back to `ceilTile` for any direction not specified.
    */
   ceilSkirtTiles?: DirectionFaceMap;
   /**
@@ -127,11 +112,11 @@ export type LayerTarget =
 
 /**
  * Return value from a `LayerSpec.filter` callback.
- * Return an object (optionally overriding `tileId`/`rotation`) to include the
+ * Return an object (optionally overriding `tile`/`rotation`) to include the
  * face, or a falsy value to exclude it.
  */
 export type LayerFaceResult =
-  | { tileId?: number; rotation?: number }
+  | { tile?: string | number; rotation?: number }
   | null
   | false
   | undefined;
@@ -143,7 +128,7 @@ export type LayerSpec = {
   material: THREE.Material;
   /**
    * Called for each candidate face.  Return an object to include the face
-   * (optionally overriding `tileId` and `rotation`), or a falsy value to skip.
+   * (optionally overriding `tile` and `rotation`), or a falsy value to skip.
    * `direction` is provided for 'wall', 'floorSkirt', and 'ceilSkirt' targets.
    * Default: include every face with tileId 0, rotation 0.
    */
@@ -255,7 +240,7 @@ function makeFaceMatrix(
  */
 function buildInstancedMesh(
   matrices: THREE.Matrix4[],
-  tileIds: number[],
+  uvRects: UvRect[],
   material: THREE.Material,
   useAtlas: boolean,
   heightOffsets?: Float32Array,
@@ -265,14 +250,21 @@ function buildInstancedMesh(
   const geo = new THREE.PlaneGeometry(1, 1);
 
   if (useAtlas) {
-    const tileIdArr = new Float32Array(matrices.length);
-    tileIds.forEach((id, i) => {
-      tileIdArr[i] = id;
+    const n = matrices.length;
+    const uvXArr = new Float32Array(n);
+    const uvYArr = new Float32Array(n);
+    const uvWArr = new Float32Array(n);
+    const uvHArr = new Float32Array(n);
+    uvRects.forEach((r, i) => {
+      uvXArr[i] = r.x;
+      uvYArr[i] = r.y;
+      uvWArr[i] = r.w;
+      uvHArr[i] = r.h;
     });
-    geo.setAttribute(
-      "aTileId",
-      new THREE.InstancedBufferAttribute(tileIdArr, 1),
-    );
+    geo.setAttribute("aUvX", new THREE.InstancedBufferAttribute(uvXArr, 1));
+    geo.setAttribute("aUvY", new THREE.InstancedBufferAttribute(uvYArr, 1));
+    geo.setAttribute("aUvW", new THREE.InstancedBufferAttribute(uvWArr, 1));
+    geo.setAttribute("aUvH", new THREE.InstancedBufferAttribute(uvHArr, 1));
 
     const offsets = heightOffsets ?? new Float32Array(matrices.length);
     geo.setAttribute(
@@ -324,10 +316,16 @@ export function createDungeonRenderer(
   const fogHex = options.fogColor ?? "#000000";
   const lerpFactor = options.lerpFactor ?? 0.18;
   const fogColor = new THREE.Color(fogHex);
-  const atlas = options.atlas;
-  const floorTileId = options.floorTileId ?? 0;
-  const ceilTileId = options.ceilTileId ?? 0;
-  const wallTileId = options.wallTileId ?? 0;
+  const packedAtlas = options.packedAtlas;
+  const resolver = options.tileNameResolver;
+
+  function getUvRect(id: number): UvRect {
+    const sprite = packedAtlas?.getById(id);
+    return sprite ? spriteToUvRect(sprite) : { x: 0, y: 0, w: 0, h: 0 };
+  }
+  const floorId = resolveTile(options.floorTile ?? 0, resolver);
+  const ceilId = resolveTile(options.ceilTile ?? 0, resolver);
+  const wallId = resolveTile(options.wallTile ?? 0, resolver);
   const wallTiles = options.wallTiles;
   const floorSkirtTiles = options.floorSkirtTiles;
   const ceilSkirtTiles = options.ceilSkirtTiles;
@@ -353,30 +351,23 @@ export function createDungeonRenderer(
   dirLight.position.set(0.5, 1, 0.75);
   scene.add(dirLight);
 
-  function makeAtlasMaterial(
-    atlasConfig: TileAtlasConfig,
-  ): THREE.ShaderMaterial {
-    // Create texture using this module's bundled Three.js so the WebGLRenderer
-    // recognises it correctly (avoids cross-instance mismatch with window.THREE).
-    const tex = new THREE.Texture(atlasConfig.image);
-    tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestFilter;
-    tex.needsUpdate = true;
+  // Shared atlas texture — created once, reused across all materials.
+  let sharedAtlasTex: THREE.Texture | null = null;
+  if (packedAtlas) {
+    sharedAtlasTex = new THREE.Texture(packedAtlas.texture as HTMLCanvasElement);
+    sharedAtlasTex.magFilter = THREE.NearestFilter;
+    sharedAtlasTex.minFilter = THREE.NearestFilter;
+    sharedAtlasTex.needsUpdate = true;
+  }
 
+  function makeAtlasMaterial(): THREE.ShaderMaterial {
+    const canvas = packedAtlas!.texture as HTMLCanvasElement;
     const mat = new THREE.ShaderMaterial({
       vertexShader: BASIC_ATLAS_VERT,
       fragmentShader: BASIC_ATLAS_FRAG,
       uniforms: makeBasicAtlasUniforms({
-        atlas: tex,
-        tileSize: new THREE.Vector2(
-          atlasConfig.tileWidth / atlasConfig.sheetWidth,
-          atlasConfig.tileHeight / atlasConfig.sheetHeight,
-        ),
-        texelSize: new THREE.Vector2(
-          1 / atlasConfig.sheetWidth,
-          1 / atlasConfig.sheetHeight,
-        ),
-        columns: atlasConfig.columns,
+        atlas: sharedAtlasTex!,
+        texelSize: new THREE.Vector2(1 / canvas.width, 1 / canvas.height),
         fogColor,
         fogNear,
         fogFar,
@@ -386,26 +377,24 @@ export function createDungeonRenderer(
     return mat;
   }
 
-  function makeAtlasMaterialDoubleSide(
-    atlasConfig: TileAtlasConfig,
-  ): THREE.ShaderMaterial {
-    const mat = makeAtlasMaterial(atlasConfig);
+  function makeAtlasMaterialDoubleSide(): THREE.ShaderMaterial {
+    const mat = makeAtlasMaterial();
     mat.side = THREE.DoubleSide;
     return mat;
   }
 
   // ── Plain (fallback) materials ────────────────────────────────────────────
-  const floorMat = atlas
-    ? makeAtlasMaterial(atlas)
+  const floorMat = packedAtlas
+    ? makeAtlasMaterial()
     : new THREE.MeshStandardMaterial({ color: 0x555566 });
-  const ceilMat = atlas
-    ? makeAtlasMaterial(atlas)
+  const ceilMat = packedAtlas
+    ? makeAtlasMaterial()
     : new THREE.MeshStandardMaterial({ color: 0x222233 });
-  const wallMat = atlas
-    ? makeAtlasMaterial(atlas)
+  const wallMat = packedAtlas
+    ? makeAtlasMaterial()
     : new THREE.MeshStandardMaterial({ color: 0x6b6070 });
-  const ceilEdgeMat = atlas
-    ? makeAtlasMaterialDoubleSide(atlas)
+  const ceilEdgeMat = packedAtlas
+    ? makeAtlasMaterialDoubleSide()
     : new THREE.MeshStandardMaterial({
         color: 0x222233,
         side: THREE.DoubleSide,
@@ -443,12 +432,12 @@ export function createDungeonRenderer(
     const offsetStep = tileSize * 0.5;
 
     const matrices: THREE.Matrix4[] = [];
-    const tileIds: number[] = [];
+    const uvRects: UvRect[] = [];
     const rotations: number[] = [];
     const offsets: number[] = [];
     const heightScales: number[] = [];
 
-    const filter = spec.filter ?? (() => ({ tileId: 0 }));
+    const filter = spec.filter ?? (() => ({ tile: 0 }));
 
     function isSolid(cx: number, cz: number) {
       if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
@@ -473,7 +462,8 @@ export function createDungeonRenderer(
     ) {
       if (!result) return;
       matrices.push(matrix);
-      tileIds.push(result.tileId ?? 0);
+      const id = result.tile !== undefined ? resolveTile(result.tile, resolver) : 0;
+      uvRects.push(getUvRect(id));
       rotations.push(result.rotation ?? 0);
       offsets.push(offset);
       heightScales.push(hs);
@@ -663,10 +653,10 @@ export function createDungeonRenderer(
 
     if (matrices.length === 0) return null;
 
-    const useAtlas = spec.useAtlas ?? !!atlas;
+    const useAtlas = spec.useAtlas ?? !!packedAtlas;
     const mesh = buildInstancedMesh(
       matrices,
-      tileIds,
+      uvRects,
       spec.material,
       useAtlas,
       new Float32Array(offsets),
@@ -710,7 +700,7 @@ export function createDungeonRenderer(
       dir: "north" | "south" | "east" | "west",
       fallbackId: number,
     ): FaceTileSpec {
-      return map?.[dir] ?? { tileId: fallbackId, rotation: 0 };
+      return map?.[dir] ?? { tile: fallbackId, rotation: 0 };
     }
 
     const floors: THREE.Matrix4[] = [];
@@ -718,11 +708,11 @@ export function createDungeonRenderer(
     const walls: THREE.Matrix4[] = [];
     const floorEdges: THREE.Matrix4[] = [];
     const ceilEdges: THREE.Matrix4[] = [];
-    const floorIds: number[] = [];
-    const ceilIds: number[] = [];
-    const wallIds: number[] = [];
-    const floorEdgeIds: number[] = [];
-    const ceilEdgeIds: number[] = [];
+    const floorRects: UvRect[] = [];
+    const ceilRects: UvRect[] = [];
+    const wallRects: UvRect[] = [];
+    const floorEdgeRects: UvRect[] = [];
+    const ceilEdgeRects: UvRect[] = [];
     const floorOffsets: number[] = [];
     const ceilOffsets: number[] = [];
     const wallRots: number[] = [];
@@ -763,7 +753,7 @@ export function createDungeonRenderer(
           floors.push(
             makeFaceMatrix(wx, 0, wz, -HALF_PI, 0, 0, tileSize, tileSize),
           );
-          floorIds.push(floorTileId);
+          floorRects.push(getUvRect(floorId));
           floorOffsets.push((floorVal - 128) * offsetStep); // vertex shader applies this
         }
 
@@ -772,12 +762,12 @@ export function createDungeonRenderer(
         ceils.push(
           makeFaceMatrix(wx, ceilingH, wz, HALF_PI, 0, 0, tileSize, tileSize),
         );
-        ceilIds.push(ceilTileId);
+        ceilRects.push(getUvRect(ceilId));
         ceilOffsets.push(-(ceilVal - 128) * offsetStep); // vertex shader applies this (inverted)
 
         // Walls — north/south/west/east with per-direction tile + rotation.
         if (isSolid(cx, cz - 1)) {
-          const s = spec(wallTiles, "north", wallTileId);
+          const s = spec(wallTiles, "north", wallId);
           walls.push(
             makeFaceMatrix(
               wx,
@@ -790,11 +780,11 @@ export function createDungeonRenderer(
               ceilingH,
             ),
           );
-          wallIds.push(s.tileId);
+          wallRects.push(getUvRect(resolveTile(s.tile, resolver)));
           wallRots.push(s.rotation ?? 0);
         }
         if (isSolid(cx, cz + 1)) {
-          const s = spec(wallTiles, "south", wallTileId);
+          const s = spec(wallTiles, "south", wallId);
           walls.push(
             makeFaceMatrix(
               wx,
@@ -807,11 +797,11 @@ export function createDungeonRenderer(
               ceilingH,
             ),
           );
-          wallIds.push(s.tileId);
+          wallRects.push(getUvRect(resolveTile(s.tile, resolver)));
           wallRots.push(s.rotation ?? 0);
         }
         if (isSolid(cx - 1, cz)) {
-          const s = spec(wallTiles, "west", wallTileId);
+          const s = spec(wallTiles, "west", wallId);
           walls.push(
             makeFaceMatrix(
               cx * tileSize,
@@ -824,11 +814,11 @@ export function createDungeonRenderer(
               ceilingH,
             ),
           );
-          wallIds.push(s.tileId);
+          wallRects.push(getUvRect(resolveTile(s.tile, resolver)));
           wallRots.push(s.rotation ?? 0);
         }
         if (isSolid(cx + 1, cz)) {
-          const s = spec(wallTiles, "east", wallTileId);
+          const s = spec(wallTiles, "east", wallId);
           walls.push(
             makeFaceMatrix(
               (cx + 1) * tileSize,
@@ -841,7 +831,7 @@ export function createDungeonRenderer(
               ceilingH,
             ),
           );
-          wallIds.push(s.tileId);
+          wallRects.push(getUvRect(resolveTile(s.tile, resolver)));
           wallRots.push(s.rotation ?? 0);
         }
 
@@ -852,7 +842,7 @@ export function createDungeonRenderer(
           // Outward-facing = opposite rotations to inward-facing walls.
           const nfN = openFloorVal(cx, cz - 1);
           if (nfN !== null && nfN < floorVal) {
-            const s = spec(floorSkirtTiles, "north", floorTileId);
+            const s = spec(floorSkirtTiles, "north", floorId);
             floorEdges.push(
               makeFaceMatrix(
                 wx,
@@ -865,12 +855,12 @@ export function createDungeonRenderer(
                 tileSize,
               ),
             );
-            floorEdgeIds.push(s.tileId);
+            floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
             floorEdgeRots.push(s.rotation ?? 0);
           }
           const nfS = openFloorVal(cx, cz + 1);
           if (nfS !== null && nfS < floorVal) {
-            const s = spec(floorSkirtTiles, "south", floorTileId);
+            const s = spec(floorSkirtTiles, "south", floorId);
             floorEdges.push(
               makeFaceMatrix(
                 wx,
@@ -883,12 +873,12 @@ export function createDungeonRenderer(
                 tileSize,
               ),
             );
-            floorEdgeIds.push(s.tileId);
+            floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
             floorEdgeRots.push(s.rotation ?? 0);
           }
           const nfW = openFloorVal(cx - 1, cz);
           if (nfW !== null && nfW < floorVal) {
-            const s = spec(floorSkirtTiles, "west", floorTileId);
+            const s = spec(floorSkirtTiles, "west", floorId);
             floorEdges.push(
               makeFaceMatrix(
                 cx * tileSize,
@@ -901,12 +891,12 @@ export function createDungeonRenderer(
                 tileSize,
               ),
             );
-            floorEdgeIds.push(s.tileId);
+            floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
             floorEdgeRots.push(s.rotation ?? 0);
           }
           const nfE = openFloorVal(cx + 1, cz);
           if (nfE !== null && nfE < floorVal) {
-            const s = spec(floorSkirtTiles, "east", floorTileId);
+            const s = spec(floorSkirtTiles, "east", floorId);
             floorEdges.push(
               makeFaceMatrix(
                 (cx + 1) * tileSize,
@@ -919,7 +909,7 @@ export function createDungeonRenderer(
                 tileSize,
               ),
             );
-            floorEdgeIds.push(s.tileId);
+            floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
             floorEdgeRots.push(s.rotation ?? 0);
           }
         }
@@ -934,11 +924,11 @@ export function createDungeonRenderer(
           ry: number,
           dir: "north" | "south" | "east" | "west",
         ) {
-          const s = spec(ceilSkirtTiles, dir, ceilTileId);
+          const s = spec(ceilSkirtTiles, dir, ceilId);
           const h = (ncVal - ceilVal) * offsetStep; // height of the step
           const midY = yCurrent - h / 2; // centre between the two ceiling levels
           ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
-          ceilEdgeIds.push(s.tileId);
+          ceilEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
           ceilEdgeRots.push(s.rotation ?? 0);
           ceilEdgeHeightScales.push(h / tileSize); // clip UV so bricks stay square
         }
@@ -959,27 +949,27 @@ export function createDungeonRenderer(
 
     floorMesh = buildInstancedMesh(
       floors,
-      floorIds,
+      floorRects,
       floorMat,
-      !!atlas,
+      !!packedAtlas,
       new Float32Array(floorOffsets),
     );
     scene.add(floorMesh);
 
     ceilMesh = buildInstancedMesh(
       ceils,
-      ceilIds,
+      ceilRects,
       ceilMat,
-      !!atlas,
+      !!packedAtlas,
       new Float32Array(ceilOffsets),
     );
     scene.add(ceilMesh);
 
     wallMesh = buildInstancedMesh(
       walls,
-      wallIds,
+      wallRects,
       wallMat,
-      !!atlas,
+      !!packedAtlas,
       undefined,
       wallRots,
     );
@@ -987,9 +977,9 @@ export function createDungeonRenderer(
 
     floorEdgeMesh = buildInstancedMesh(
       floorEdges,
-      floorEdgeIds,
+      floorEdgeRects,
       floorMat,
-      !!atlas,
+      !!packedAtlas,
       undefined,
       floorEdgeRots,
     );
@@ -997,9 +987,9 @@ export function createDungeonRenderer(
 
     ceilEdgeMesh = buildInstancedMesh(
       ceilEdges,
-      ceilEdgeIds,
+      ceilEdgeRects,
       ceilEdgeMat,
-      !!atlas,
+      !!packedAtlas,
       undefined,
       ceilEdgeRots,
       ceilEdgeHeightScales,
@@ -1054,20 +1044,6 @@ export function createDungeonRenderer(
   const entityMeshMap = new Map<string, THREE.Mesh>();
   const billboardMap = new Map<string, BillboardHandle>();
 
-  // Lazily-created atlas texture shared across all billboard layers.
-  let billboardAtlasTex: THREE.Texture | null = null;
-
-  function getBillboardAtlas(): THREE.Texture | null {
-    if (!atlas) return null;
-    if (!billboardAtlasTex) {
-      billboardAtlasTex = new THREE.Texture(atlas.image);
-      billboardAtlasTex.magFilter = THREE.NearestFilter;
-      billboardAtlasTex.minFilter = THREE.NearestFilter;
-      billboardAtlasTex.needsUpdate = true;
-    }
-    return billboardAtlasTex;
-  }
-
   function syncEntities(entities: EntityBase[]) {
     const aliveIds = new Set(entities.filter((e) => e.alive).map((e) => e.id));
 
@@ -1089,22 +1065,14 @@ export function createDungeonRenderer(
 
       if (e.spriteMap) {
         // Billboard path
-        if (!billboardMap.has(e.id)) {
-          const atlasTex = getBillboardAtlas();
-          if (atlasTex && atlas) {
-            const tileSizeNorm = new THREE.Vector2(
-              atlas.tileWidth / atlas.sheetWidth,
-              atlas.tileHeight / atlas.sheetHeight,
-            );
-            const handle = createBillboard(
-              e as EntityBase & { spriteMap: SpriteMap },
-              atlasTex,
-              atlas.columns,
-              tileSizeNorm,
-              scene,
-            );
-            billboardMap.set(e.id, handle);
-          }
+        if (!billboardMap.has(e.id) && packedAtlas) {
+          const handle = createBillboard(
+            e as EntityBase & { spriteMap: SpriteMap },
+            packedAtlas,
+            scene,
+            resolver,
+          );
+          billboardMap.set(e.id, handle);
         }
         // update() is called in the RAF loop using the current camera yaw
       } else {
@@ -1209,7 +1177,7 @@ export function createDungeonRenderer(
       syncEntities(entities);
     },
     createAtlasMaterial() {
-      return atlas ? makeAtlasMaterial(atlas) : null;
+      return packedAtlas ? makeAtlasMaterial() : null;
     },
     addLayer(spec: LayerSpec): LayerHandle {
       const holder: { mesh: THREE.InstancedMesh | null } = { mesh: null };
@@ -1264,7 +1232,7 @@ export function createDungeonRenderer(
       for (const geo of entityGeoCache.values()) geo.dispose();
       for (const mat of entityMatCache.values()) mat.dispose();
       for (const handle of billboardMap.values()) handle.dispose();
-      billboardAtlasTex?.dispose();
+      sharedAtlasTex?.dispose();
       glRenderer.dispose();
       canvas.remove();
     },

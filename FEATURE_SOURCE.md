@@ -78,10 +78,10 @@ src/lib/
 
 ### Texture Loader / Sprite Packer
 
-Two-phase system: load phase fetches a source image and a TexturePacker-format atlas JSON, unpacks each named sprite (undoing packer `rotated: true` during blit), and shelf-packs sprites into a power-of-two `OffscreenCanvas`. Runtime phase exposes a `PackedAtlas` that maps string names → UV rects, with `getByName()` / `getById()` helpers and a `resolveSprite()` utility that accepts `string | number`. `toFaceRotation()` converts the optional per-frame `rotation` field (0/90/180/270° CW) to the `FaceRotation` index used by the billboard / `FaceTileSpec` shader pathway.
+Two-phase system: load phase fetches a source image and a TexturePacker-format atlas JSON, unpacks each named sprite (undoing packer `rotated: true` during blit), and shelf-packs sprites into a power-of-two `OffscreenCanvas`. Runtime phase exposes a `PackedAtlas` that maps string names → UV rects, with `getByName()` / `getById()` helpers and a `resolveSprite()` utility that accepts `string | number`. `toFaceRotation()` converts the optional per-frame `rotation` field (0/90/180/270° CW) to the `FaceRotation` index. `packedAtlasResolver()` wraps a `PackedAtlas` as a `(name: string) => number` resolver for `tileNameResolver`. `spriteToUvRect()` converts a `PackedSprite`'s canvas UV to a GL-convention `UvRect` (y=0 at bottom).
 
 **Files:**
-- `rendering/textureLoader.ts` — public types (`AtlasFrame`, `TextureAtlasJson`, `PackedSprite`, `PackedAtlas`, `LoadingOptions`); `computeLayout()` shelf packer (POT, 2px padding, tallest-first sort); `blitSprite()` OffscreenCanvas blit with packer-rotation undo; `loadTextureAtlas()` orchestrates fetch → pack → blit → return; `injectOverlay()` full-screen loading screen; `resolveSprite()` name-or-id lookup helper; `toFaceRotation()` degree → FaceRotation index converter
+- `rendering/textureLoader.ts` — public types (`AtlasFrame`, `TextureAtlasJson`, `PackedSprite`, `PackedAtlas`, `LoadingOptions`, `UvRect`); `computeLayout()` shelf packer (POT, 2px padding, tallest-first sort); `blitSprite()` OffscreenCanvas blit with packer-rotation undo; `loadTextureAtlas()` orchestrates fetch → pack → blit → return; `injectOverlay()` full-screen loading screen; `resolveSprite()` name-or-id lookup helper; `toFaceRotation()` degree → FaceRotation index converter; `packedAtlasResolver()` creates a tile-name resolver; `spriteToUvRect()` converts canvas UV to GL `UvRect`
 
 **Example:**
 - `examples/standalone/texture-loader/index.html`
@@ -91,10 +91,10 @@ Two-phase system: load phase fetches a source image and a TexturePacker-format a
 
 ### Billboarded sprite rendering for mobile entities
 
-Camera-facing billboard quads driven by a multi-layer sprite system. Actors declare a `spriteMap` field; its presence switches the dungeon renderer from box geometry to billboard quads automatically. Supports up to N texture layers per billboard (independent tile ID, x/y offset, scale, opacity) and up to 8 viewing angles (N/NE/E/SE/S/SW/W/NW) with per-layer tile overrides. The box fallback remains for entities without `spriteMap`.
+Camera-facing billboard quads driven by a multi-layer sprite system. Actors declare a `spriteMap` field; its presence switches the dungeon renderer from box geometry to billboard quads automatically. Supports up to N texture layers per billboard (independent `tile` as string name or numeric index, x/y offset, scale, opacity) and up to 8 viewing angles (N/NE/E/SE/S/SW/W/NW) with per-layer tile overrides. String tile names are resolved via the optional `resolver` parameter. The box fallback remains for entities without `spriteMap`.
 
 **Files:**
-- `rendering/billboardSprites.ts` — `SpriteMap`, `SpriteLayer`, `AngleOverride`, `AngleKey` public types; `createBillboard()` allocates per-layer `PlaneGeometry` meshes using a custom `ShaderMaterial` (GLSL UV atlas sampling, `uTileId`/`uOpacity` uniforms, alpha discard); `BillboardHandle.update()` rotates the group to face the camera each RAF frame, selects the active angle key, and pushes uniform updates; `BillboardHandle.dispose()` cleans up geometry and materials
+- `rendering/billboardSprites.ts` — `SpriteMap`, `SpriteLayer` (`tile: string | number`), `AngleOverride` (`tile: string | number`), `AngleKey` public types; `createBillboard()` accepts optional `resolver` param, allocates per-layer `PlaneGeometry` meshes using a custom `ShaderMaterial` (GLSL UV atlas sampling, `uTileId`/`uOpacity` uniforms, alpha discard); `BillboardHandle.update()` rotates the group to face the camera each RAF frame, selects the active angle key, resolves tile names via `resolveTile()`, and pushes uniform updates; `BillboardHandle.dispose()` cleans up geometry and materials
 - `rendering/dungeonRenderer.ts` — holds a `Map<string, BillboardHandle>` alongside `entityMeshMap`; `syncEntities()` routes entities with `spriteMap` to `createBillboard()` and others to the box path; RAF loop calls `handle.update()` with the current `curYaw`; `destroy()` disposes all billboard handles and the shared atlas texture
 - `entities/types.ts` — `spriteMap?: SpriteMap` optional field added to `EntityBase`
 
@@ -107,12 +107,12 @@ Camera-facing billboard quads driven by a multi-layer sprite system. Actors decl
 ### First-person 3D dungeon rendering with lighting and fog
 
 **Files:**
-- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; supports per-cell floor/ceiling height offsets via `aHeightOffset`, per-instance UV rotation via `aUvRotation`, and UV height scaling via `aUvHeightScale`; per-direction tile specs via `wallTiles`, `floorSkirtTiles`, `ceilSkirtTiles` options; public `addLayer(spec)` API for stacking additional instanced meshes on floors, ceilings, walls, or skirts with per-face filtering and deferred application; uses `basicLighting.ts` shaders; routes entities with `spriteMap` to `billboardSprites.ts`; exports `LayerTarget`, `LayerFaceResult`, `LayerSpec`, `LayerHandle`, `SpriteMap`
+- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; `floorTile`/`ceilTile`/`wallTile` options accept `string | number` resolved via `tileNameResolver`; `LayerFaceResult.tile` is `string | number`; per-direction tile specs via `wallTiles`, `floorSkirtTiles`, `ceilSkirtTiles` options; public `addLayer(spec)` API for stacking additional instanced meshes on floors, ceilings, walls, or skirts with per-face filtering and deferred application; uses `basicLighting.ts` shaders; routes entities with `spriteMap` to `billboardSprites.ts` (passing resolver); exports `LayerTarget`, `LayerFaceResult`, `LayerSpec`, `LayerHandle`, `SpriteMap`
 - `rendering/billboardSprites.ts` — see "Billboarded sprite rendering" feature entry above
 - `rendering/basicLighting.ts` — minimal atlas and object shaders: texture sampling + linear fog; `aUvRotation` rotates UVs in 90° steps (0–3); `aUvHeightScale` clips UVs to the top fraction of a tile (top-aligned) so partial-height skirt panels keep brick aspect ratio; no torch flicker or tint bands; used by `dungeonRenderer.ts`
 - `rendering/torchLighting.ts` — torch color, intensity, banding constants, and flickering GLSL chunks; available for custom renderers that want animated torch lighting
 - `rendering/camera.ts` — camera state, `tryMove` wall-collision logic, lerp movement, EotB-style movement as secondary export
-- `rendering/tileAtlas.ts` — UV coordinate helpers; exports `FaceRotation`, `FaceTileSpec`, `DirectionFaceMap` types for per-face tile and rotation overrides
+- `rendering/tileAtlas.ts` — UV coordinate helpers; exports `FaceRotation`, `FaceTileSpec` (`tile: string | number`), `DirectionFaceMap` types for per-face tile and rotation overrides; `resolveTile()` helper resolves string names via an optional resolver function
 - `rendering/temperatureMask.ts` — optional per-region temperature tinting, passed as a shader uniform
 
 ---
@@ -358,4 +358,4 @@ RPG-style inventory dialog with a two-column layout: character profile + item gr
 - `api/player.ts` — player handle and action methods
 - `api/actions.ts` — action pipeline middleware
 - `api/keybindings.ts` — DOM keybinding attachment
-- `index.ts` — re-exports the public `CrawlLib` namespace: `createGame`, `attachMinimap`, `attachSpawner`, `attachDecorator`, `attachSurfacePainter`, `attachKeybindings`, `createNpc`, `createEnemy`, `createDecoration`, `createItem`, `buildTilesetMap`, `createWebSocketTransport`
+- `index.ts` — re-exports the public `CrawlLib` namespace: `createGame`, `attachMinimap`, `attachSpawner`, `attachDecorator`, `attachSurfacePainter`, `attachKeybindings`, `createNpc`, `createEnemy`, `createDecoration`, `createItem`, `buildTilesetMap`, `createWebSocketTransport`, `packedAtlasResolver`

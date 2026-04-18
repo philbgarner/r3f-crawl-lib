@@ -92,6 +92,36 @@ export function toFaceRotation(rotation: 0 | 90 | 180 | 270): FaceRotation {
   return map[rotation] ?? 0;
 }
 
+/** A normalised UV rectangle in GL convention (y=0 at the bottom of the texture). */
+export type UvRect = { x: number; y: number; w: number; h: number };
+
+/**
+ * Convert a PackedSprite's canvas UV coordinates to a GL-convention UV rect.
+ * Three.js textures use flipY=true by default, so canvas y=0 (top) becomes
+ * GL y=1 (top). The returned rect's y is the GL bottom-left corner of the sprite.
+ */
+export function spriteToUvRect(sprite: PackedSprite): UvRect {
+  return {
+    x: sprite.uvX,
+    y: 1 - sprite.uvY - sprite.uvH,
+    w: sprite.uvW,
+    h: sprite.uvH,
+  };
+}
+
+/**
+ * Create a tile-name resolver from a baked PackedAtlas.
+ * Pass the returned function as `tileNameResolver` in DungeonRendererOptions.
+ *
+ * @example
+ * const packed = await loadTextureAtlas(src, json);
+ * const resolver = packedAtlasResolver(packed);
+ * createDungeonRenderer(el, game, { ..., tileNameResolver: resolver });
+ */
+export function packedAtlasResolver(atlas: PackedAtlas): (name: string) => number {
+  return (name: string) => atlas.getByName(name)?.id ?? 0;
+}
+
 /**
  * Resolve a sprite from a PackedAtlas by either name or insertion-order id.
  */

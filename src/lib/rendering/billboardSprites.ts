@@ -5,6 +5,9 @@
 
 import * as THREE from "three";
 import type { EntityBase } from "../entities/types";
+import { resolveTile } from "./tileAtlas";
+import type { PackedAtlas } from "./textureLoader";
+import { spriteToUvRect } from "./textureLoader";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -13,8 +16,8 @@ import type { EntityBase } from "../entities/types";
 export type AngleKey = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
 
 export interface SpriteLayer {
-  /** Atlas tile index (row-major, 0-based). */
-  tileId: number;
+  /** Atlas tile: string name (resolved via resolver) or numeric tile index. */
+  tile: string | number;
   /** Horizontal offset from billboard center, in world units. Default 0. */
   offsetX?: number;
   /** Vertical offset from billboard center, in world units. Default 0. */
@@ -28,8 +31,8 @@ export interface SpriteLayer {
 export interface AngleOverride {
   /** Which layer index this override targets. */
   layerIndex: number;
-  /** Replacement tile ID for this angle. */
-  tileId: number;
+  /** Replacement tile for this angle: string name or numeric tile index. */
+  tile: string | number;
   /** Replacement opacity (optional). */
   opacity?: number;
 }
@@ -66,18 +69,16 @@ void main() {
 
 const BILLBOARD_FRAG = /* glsl */ `
 uniform sampler2D uAtlas;
-uniform vec2  uTileSize;
-uniform float uColumns;
-uniform float uTileId;
+uniform float uUvX;
+uniform float uUvY;
+uniform float uUvW;
+uniform float uUvH;
 uniform float uOpacity;
 
 varying vec2 vUv;
 
 void main() {
-  float col = mod(uTileId, uColumns);
-  float row = floor(uTileId / uColumns);
-  vec2 origin = vec2(col, row) * uTileSize;
-  vec2 atlasUv = origin + vUv * uTileSize;
+  vec2 atlasUv = vec2(uUvX + vUv.x * uUvW, uUvY + vUv.y * uUvH);
   vec4 color = texture2D(uAtlas, atlasUv);
   if (color.a < 0.01) discard;
   gl_FragColor = vec4(color.rgb, color.a * uOpacity);
@@ -97,7 +98,13 @@ export interface BillboardHandle {
 
 interface LayerMeshEntry {
   mesh: THREE.Mesh;
-  uniforms: { uTileId: { value: number }; uOpacity: { value: number } };
+  uniforms: {
+    uUvX: { value: number };
+    uUvY: { value: number };
+    uUvW: { value: number };
+    uUvH: { value: number };
+    uOpacity: { value: number };
+  };
   baseLayer: SpriteLayer;
   layerIndex: number;
 }
@@ -124,21 +131,33 @@ function selectAngleKey(entityFacing: number, cameraYaw: number): AngleKey {
  */
 export function createBillboard(
   entity: EntityBase & { spriteMap: SpriteMap },
-  atlas: THREE.Texture,
-  atlasColumns: number,
-  tileSizeNorm: THREE.Vector2,
+  packedAtlas: PackedAtlas,
   scene: THREE.Scene,
+  resolver?: (name: string) => number,
 ): BillboardHandle {
   const { spriteMap } = entity;
   const group = new THREE.Group();
   scene.add(group);
 
+  const atlasTex = new THREE.Texture(packedAtlas.texture as HTMLCanvasElement);
+  atlasTex.magFilter = THREE.NearestFilter;
+  atlasTex.minFilter = THREE.NearestFilter;
+  atlasTex.needsUpdate = true;
+
+  function getRect(tile: string | number) {
+    const id = resolveTile(tile, resolver);
+    const sprite = packedAtlas.getById(id);
+    return sprite ? spriteToUvRect(sprite) : { x: 0, y: 0, w: 0, h: 0 };
+  }
+
   const layerEntries: LayerMeshEntry[] = spriteMap.layers.map((layer, layerIndex) => {
+    const rect = getRect(layer.tile);
     const uniforms = {
-      uAtlas: { value: atlas },
-      uTileSize: { value: tileSizeNorm },
-      uColumns: { value: atlasColumns },
-      uTileId: { value: layer.tileId },
+      uAtlas:   { value: atlasTex },
+      uUvX:     { value: rect.x },
+      uUvY:     { value: rect.y },
+      uUvW:     { value: rect.w },
+      uUvH:     { value: rect.h },
       uOpacity: { value: layer.opacity ?? 1 },
     };
 
@@ -185,7 +204,12 @@ export function createBillboard(
 
       for (const entry of layerEntries) {
         const override = overrides?.find((o) => o.layerIndex === entry.layerIndex);
-        entry.uniforms.uTileId.value = override?.tileId ?? entry.baseLayer.tileId;
+        const rawTile = override?.tile ?? entry.baseLayer.tile;
+        const rect = getRect(rawTile);
+        entry.uniforms.uUvX.value = rect.x;
+        entry.uniforms.uUvY.value = rect.y;
+        entry.uniforms.uUvW.value = rect.w;
+        entry.uniforms.uUvH.value = rect.h;
         entry.uniforms.uOpacity.value =
           override?.opacity ?? entry.baseLayer.opacity ?? 1;
 
