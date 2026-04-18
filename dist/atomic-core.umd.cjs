@@ -2960,7 +2960,7 @@ void main() {
 	*/
 	var HALF_PI = Math.PI / 2;
 	/** Eye height as a fraction of ceiling height (same as PerspectiveDungeonView). */
-	var EYE_HEIGHT_FACTOR = .4;
+	var EYE_HEIGHT_FACTOR = .66;
 	function makeFaceMatrix(x, y, z, rx, ry, rz, w, h) {
 		return new three.Matrix4().compose(new three.Vector3(x, y, z), new three.Quaternion().setFromEuler(new three.Euler(rx, ry, rz)), new three.Vector3(w, h, 1));
 	}

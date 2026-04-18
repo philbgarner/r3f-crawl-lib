@@ -229,7 +229,8 @@ export type DungeonRenderer = {
 
 const HALF_PI = Math.PI / 2;
 /** Eye height as a fraction of ceiling height (same as PerspectiveDungeonView). */
-const EYE_HEIGHT_FACTOR = 0.4;
+// using the d&d standard of 7.5ft shrinking cubes, 0.66x gives eye level for a medium creature at about 5ft which is what we expect.
+const EYE_HEIGHT_FACTOR = 0.66;
 
 function makeFaceMatrix(
   x: number,
