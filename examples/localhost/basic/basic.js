@@ -8,6 +8,8 @@ const {
   attachSpawner,
   attachKeybindings,
   createDungeonRenderer,
+  loadTextureAtlas,
+  packedAtlasResolver,
 } = AtomicCore;
 
 // ---------------------------------------------------------------------------
@@ -65,37 +67,30 @@ const game = createGame(document.body, {
 });
 
 // ---------------------------------------------------------------------------
-// 3D renderer — with tile atlas
+// 3D renderer — baked texture atlas with named tiles
 // ---------------------------------------------------------------------------
-//
-// atlas.png: 512×1024 px, 64 px tiles → 8 columns.
-// Tile ID = (pixelY / 64) * 8 + (pixelX / 64)  (row-major, top-left origin).
-//
-// atlas.json entries used (uv = [pixelX, pixelY]):
-//   Floor   – Flagstone   uv [256, 128] → id 20
-//   Ceiling – Cobblestone uv [192, 128] → id 19
-//   Wall    – Brick       uv [0,   128] → id 16
 
 let renderer;
 
-const atlasImg = new Image();
-atlasImg.onload = () => {
-  renderer = createDungeonRenderer(viewportEl, game, {
-    atlas: {
-      image: atlasImg,
-      tileWidth: 64,
-      tileHeight: 64,
-      sheetWidth: 512,
-      sheetHeight: 1024,
-      columns: 8,
-    },
-    floorTileId: 20, // Flagstone   uv [256, 128]
-    ceilTileId: 19, // Cobblestone uv [192, 128]
-    wallTileId: 16, // Brick       uv [0,   128]
+async function init() {
+  const atlasJson = await fetch("../textureAtlas.json").then((r) => r.json());
+  const packed = await loadTextureAtlas("../textureAtlas.png", atlasJson, {
+    showLoadingScreen: false,
   });
+  const resolver = packedAtlasResolver(packed);
+
+  renderer = createDungeonRenderer(viewportEl, game, {
+    packedAtlas: packed,
+    tileNameResolver: resolver,
+    floorTile: "flagstone_floor_stone.png",
+    ceilTile:  "plaster_ceiling.png",
+    wallTile:  "brick_wall_stone.png",
+  });
+
   game.generate();
-};
-atlasImg.src = "./atlas.png";
+}
+
+init();
 
 // ---------------------------------------------------------------------------
 // Spawn enemies — one per room, capped, skipping early rooms
@@ -159,8 +154,6 @@ attachKeybindings(game, {
       addLog("You are dead. Refresh to restart.", "death");
       return;
     }
-    // Compute grid-relative step from facing angle.
-    // facing is yaw in radians; sin/cos give the forward vector in (x, z) grid space.
     function relativeMove(forward, strafe) {
       const yaw = game.player.facing;
       const fx = Math.round(-Math.sin(yaw));
@@ -199,8 +192,6 @@ attachKeybindings(game, {
     if (a) game.turns.commit(a);
   },
 });
-
-// game.generate() is called inside the TextureLoader callback above.
 
 // ---------------------------------------------------------------------------
 // Helpers

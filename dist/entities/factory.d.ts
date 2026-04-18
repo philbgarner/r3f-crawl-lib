@@ -1,4 +1,4 @@
-import { EntityBase } from './types';
+import { EntityBase, SpriteMap } from './types';
 import { RpsEffect } from './effects';
 type BaseOpts = {
     type: string;
@@ -6,6 +6,7 @@ type BaseOpts = {
     x: number;
     z: number;
     faction?: string;
+    spriteMap?: SpriteMap;
 };
 export type NpcOpts = BaseOpts & {
     hp?: number;

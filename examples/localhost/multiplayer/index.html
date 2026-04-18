@@ -59,6 +59,26 @@
     #connect-error { color: #f66; font-size: 8px; display: none; }
     #player-count { color: #69f; }
 
+    /* Sprite selector */
+    #sprite-select { display: flex; gap: 12px; flex-wrap: wrap; }
+    .sprite-opt { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .sprite-opt input[type="radio"] { accent-color: #f0c040; cursor: pointer; }
+
+    /* Minimap overlay */
+    #minimap {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+      width: 196px;
+      height: 196px;
+      border: 2px solid #304080;
+      background: #000;
+      box-shadow: 0 0 0 1px #000, 0 0 12px rgba(0,0,0,0.8);
+      image-rendering: pixelated;
+      z-index: 10;
+      pointer-events: none;
+    }
+
     /* ── Player list ─────────────────────────────────────────────────────── */
     #player-list-section {
       border-top: 1px solid #304080;
@@ -174,6 +194,12 @@
       <h2>MULTIPLAYER</h2>
       <label>Server URL</label>
       <input id="server-url" type="text" value="ws://localhost:3001" />
+      <label>Your sprite</label>
+      <div id="sprite-select">
+        <label class="sprite-opt"><input type="radio" name="sprite" value="rogue" checked> Rogue</label>
+        <label class="sprite-opt"><input type="radio" name="sprite" value="warrior"> Warrior</label>
+        <label class="sprite-opt"><input type="radio" name="sprite" value="mage"> Mage</label>
+      </div>
       <button id="connect-btn">Connect</button>
       <div id="connect-error"></div>
       <div id="status-tag">First player to join becomes the host and generates the dungeon.</div>
@@ -202,6 +228,7 @@
 
   <div id="canvas-wrap">
     <div id="viewport"></div>
+    <canvas id="minimap" width="196" height="196"></canvas>
 
     <!-- Chat messages overlay — pointer-events: none so the 3D viewport stays interactive -->
     <div id="chat-overlay"></div>

@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>atomic-core — Texture Loader</title>
+        <link rel="stylesheet" href="../basic/styles.css" />
+        <style>
+            #sidebar {
+                overflow: hidden;
+            }
+
+            #sidebar h2 {
+                font-size: 7px;
+                color: var(--gold-dim);
+                letter-spacing: 0.1em;
+                margin-top: 8px;
+                border-bottom: 1px solid var(--border);
+                padding-bottom: 6px;
+                flex-shrink: 0;
+            }
+
+            #sprite-list {
+                flex: 1;
+                min-height: 0;
+                overflow-y: auto;
+                font-size: 7px;
+                line-height: 1.5;
+                color: var(--desc);
+                scrollbar-gutter: stable;
+            }
+
+            .sprite-row {
+                display: flex;
+                align-items: flex-start;
+                gap: 5px;
+                padding: 4px 2px;
+                border-bottom: 1px solid #1a1a3a;
+            }
+
+            .sprite-row:hover {
+                background: rgba(48, 64, 128, 0.25);
+            }
+
+            .sprite-row.sprite-disabled {
+                opacity: 0.38;
+            }
+
+            .sprite-row input[type="checkbox"] {
+                margin-top: 2px;
+                flex-shrink: 0;
+                accent-color: var(--gold);
+                cursor: pointer;
+            }
+
+            .sprite-info {
+                flex: 1;
+                min-width: 0;
+                word-break: break-all;
+            }
+
+            .sprite-name { color: var(--gold); }
+
+            .ellipsis-btn {
+                flex-shrink: 0;
+                background: transparent;
+                border: 1px solid var(--border);
+                color: var(--desc);
+                font-family: monospace;
+                font-size: 10px;
+                padding: 0 5px;
+                cursor: pointer;
+                line-height: 1.4;
+                align-self: center;
+                margin-right: 14px;
+            }
+
+            .ellipsis-btn:hover {
+                background: var(--border);
+                color: var(--gold);
+            }
+
+            #packed-canvas {
+                display: block;
+                max-width: 100%;
+                image-rendering: pixelated;
+                border: 1px solid var(--border);
+                margin-top: 8px;
+            }
+
+            #canvas-wrap {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 8px;
+                padding: 16px;
+                overflow: auto;
+            }
+
+            #canvas-title {
+                font-size: 8px;
+                color: var(--gold-dim);
+                letter-spacing: 0.1em;
+            }
+
+            /* JSON popup */
+            #json-popup {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.72);
+                z-index: 1000;
+                align-items: center;
+                justify-content: center;
+            }
+
+            #json-popup-inner {
+                background: var(--panel);
+                border: 2px solid var(--border);
+                box-shadow: 0 0 32px rgba(48,64,128,0.6);
+                padding: 16px;
+                max-width: 820px;
+                width: 92%;
+                max-height: 80vh;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            #json-popup-content {
+                display: flex;
+                flex-direction: row;
+                gap: 12px;
+                flex: 1;
+                min-height: 0;
+                overflow: hidden;
+            }
+
+            #json-popup-sprite {
+                flex-shrink: 0;
+                display: block;
+                width: 240px;
+                height: auto;
+                align-self: flex-start;
+                image-rendering: pixelated;
+                border: 1px solid var(--border);
+                background-color: rgba(0,0,0,0.5);
+                background-image: linear-gradient(45deg, #1a1a2e 25%, transparent 25%),
+                                  linear-gradient(-45deg, #1a1a2e 25%, transparent 25%),
+                                  linear-gradient(45deg, transparent 75%, #1a1a2e 75%),
+                                  linear-gradient(-45deg, transparent 75%, #1a1a2e 75%);
+                background-size: 16px 16px;
+                background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+            }
+
+            #json-popup-title {
+                font-size: 8px;
+                color: var(--gold);
+                letter-spacing: 0.08em;
+                word-break: break-all;
+            }
+
+            #json-popup-body {
+                flex: 1;
+                overflow-y: auto;
+                font-family: monospace;
+                font-size: 10px;
+                color: var(--text);
+                white-space: pre;
+                background: rgba(0,0,0,0.35);
+                padding: 10px;
+                border: 1px solid var(--border);
+                line-height: 1.6;
+                min-width: 0;
+            }
+
+            #json-popup-close {
+                align-self: flex-end;
+                background: transparent;
+                border: 1px solid var(--border);
+                color: var(--desc);
+                font-family: 'Press Start 2P', monospace;
+                font-size: 8px;
+                padding: 5px 10px;
+                cursor: pointer;
+                letter-spacing: 0.08em;
+            }
+
+            #json-popup-close:hover {
+                background: var(--border);
+                color: var(--gold);
+            }
+        </style>
+    </head>
+    <body>
+        <div id="sidebar">
+            <h1>Texture Loader</h1>
+
+            <div id="stats">
+                Sprites: <span id="sprite-count">—</span><br />
+                Texture: <span id="tex-size">—</span><br />
+                Status: <span id="status">loading...</span>
+                <label style="margin-left:8px;font-size:7px;color:var(--desc);cursor:pointer;white-space:nowrap;">
+                    <input type="checkbox" id="overlay-cb" style="accent-color:var(--gold);vertical-align:middle;cursor:pointer;"> overlay
+                </label>
+            </div>
+
+            <h2 style="display:flex;align-items:center;gap:4px;">
+                <span style="flex-shrink:0;">Packed Sprites</span>
+                <input id="sprite-filter" type="search" placeholder="filter…"
+                    style="flex:1;min-width:0;font-family:monospace;font-size:7px;padding:1px 4px;background:transparent;border:1px solid var(--border);color:var(--desc);outline:none;letter-spacing:0.05em;" />
+                <button id="toggle-all-btn" style="flex-shrink:0;font-family:monospace;font-size:7px;padding:1px 5px;background:transparent;border:1px solid var(--border);color:var(--desc);cursor:pointer;letter-spacing:0.05em;">none</button>
+            </h2>
+            <div id="sprite-list"></div>
+
+            <div id="controls">
+                Fetches two atlas pairs<br />
+                via loadMultiAtlas()
+            </div>
+
+            <button id="download-btn" disabled style="margin-top:12px;width:100%;padding:6px 0;font-family:monospace;font-size:9px;letter-spacing:0.08em;cursor:pointer;opacity:0.4;">
+                Download PNG
+            </button>
+        </div>
+
+        <div id="canvas-wrap">
+            <div id="canvas-title">Baked Packed Texture</div>
+            <canvas id="packed-canvas"></canvas>
+        </div>
+
+        <!-- JSON source popup -->
+        <div id="json-popup">
+            <div id="json-popup-inner">
+                <div id="json-popup-title"></div>
+                <div id="json-popup-content">
+                    <pre id="json-popup-body"></pre>
+                    <canvas id="json-popup-sprite"></canvas>
+                </div>
+                <button id="json-popup-close">Close</button>
+            </div>
+        </div>
+
+        <script type="module">
+            import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js";
+            window.THREE = THREE;
+        </script>
+        <script src="../../../dist/atomic-core.iife.js" defer></script>
+        <script src="./texture-loader.js" defer></script>
+    </body>
+</html>

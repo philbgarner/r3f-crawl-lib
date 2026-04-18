@@ -66,6 +66,7 @@ Game logic lives entirely in your JS layer - the library provides the rendering 
 - [Multiplayer Transport](#multiplayer-transport)
 - [Tiled Workflow](#tiled-workflow)
 - [Configuration Reference](#configuration-reference)
+- [Texture Loader / Sprite Packer](#texture-loader--sprite-packer)
 - [Tile Atlas Format](#tile-atlas-format)
 
 ---
@@ -94,6 +95,7 @@ Game logic lives entirely in your JS layer - the library provides the rendering 
 - **Inventory dialog UI** - `showInventory()` renders a two-column RPG inventory screen (character profile, item grid, equipment paper-doll, stat bars, indicators, action buttons) with full drag-and-drop support; pass `customLayout: true` for a bare `<dialog>` you control
 - Audio hooks (Howler.js compatible)
 - Optional multiplayer transport layer (WebSocket-based, server-authoritative)
+- **Texture Loader / Sprite Packer** — `loadTextureAtlas()` fetches a TexturePacker-format atlas, shelf-packs sprites into a power-of-two `OffscreenCanvas`, and returns a `PackedAtlas` with UV data accessible by name or id
 - Script tag API - no build step required
 - localhost friendly - if you want to serve it with Node.
 
@@ -1676,6 +1678,85 @@ All settings are passed directly to `AtomicCore.createGame()` or the relevant `a
 | `attachDecorator` | `onDecorate` - callback receiving `{ dungeon, roomId, x, y }` |
 | `attachSurfacePainter` | `onPaint` - callback receiving `{ dungeon, roomId, x, y }`, returns ordered array of atlas tile name strings |
 | `attachKeybindings` | `bindings`, `onAction` |
+
+---
+
+## Texture Loader / Sprite Packer
+
+`loadTextureAtlas(imageUrl, atlasJson, options?)` accepts a TexturePacker-format sprite sheet (image URL + parsed JSON) and returns a `PackedAtlas` — a baked, power-of-two `OffscreenCanvas` with UV data for every sprite keyed by name or insertion-order id.
+
+### Extended Atlas JSON schema
+
+Standard TexturePacker output works unchanged. Two optional per-frame fields are supported:
+
+```jsonc
+"bat_placeholder1.png": {
+  "frame":             { "x": 1, "y": 1, "w": 95, "h": 64 },
+  "rotated":           false,   // packer stored sprite 90° CW to save space — undone during blit
+  "rotation":          0,       // NEW (optional): display rotation 0|90|180|270° CW, forwarded to shader
+  "trimmed":           true,
+  "spriteSourceSize":  { "x": 17, "y": 0, "w": 95, "h": 64 },
+  "sourceSize":        { "w": 128, "h": 64 },
+  "pivot":             { "x": 0.5, "y": 0.5 }
+}
+```
+
+`rotated: true` means the packer stored the sprite sideways — the loader undoes this during blitting so pixels are always right-way-up in the packed texture.
+
+`rotation` is optional metadata (0/90/180/270° CW). It is **not** baked into pixels. Convert it to a `FaceRotation` index via `toFaceRotation(sprite.rotation)` to forward it to the existing billboard / `FaceTileSpec` shader pathway.
+
+### Loading
+
+```js
+const atlas = await AtomicCore.loadTextureAtlas(
+  './textureAtlas.png',  // or a data URL
+  atlasJson,             // parsed TextureAtlasJson object
+  {
+    showLoadingScreen: true,      // inject a full-screen overlay while fetching (default: true)
+    loadingText:       'Loading...', // overlay text (default: "Loading...")
+    container:         document.body,
+    onProgress: (loaded, total) => console.log(loaded, '/', total),
+  },
+);
+
+// atlas.texture   — OffscreenCanvas (or HTMLCanvasElement as fallback)
+// atlas.sprites   — Map<string, PackedSprite>
+// atlas.getByName('bat_placeholder1.png')  → PackedSprite | undefined
+// atlas.getById(0)                          → PackedSprite | undefined (insertion-order index)
+```
+
+### PackedSprite shape
+
+```ts
+type PackedSprite = {
+  name:     string;               // original atlas key
+  id:       number;               // insertion-order index (maps to tileId)
+  uvX:      number;               // normalised left edge (y=0 top)
+  uvY:      number;               // normalised top edge  (y=0 top)
+  uvW:      number;
+  uvH:      number;
+  pivot:    { x: number; y: number };
+  rotation: 0 | 90 | 180 | 270;  // display rotation in degrees CW
+};
+```
+
+### String-name resolution
+
+`resolveSprite(atlas, nameOrId)` accepts either a string name or a numeric id:
+
+```js
+const { resolveSprite, toFaceRotation } = AtomicCore;
+
+const sprite    = resolveSprite(atlas, 'bat_placeholder1.png');
+const sameThing = resolveSprite(atlas, sprite.id);   // same object
+
+// Convert rotation to the FaceRotation index used by FaceTileSpec / billboard shader:
+const faceRot = toFaceRotation(sprite.rotation);     // 0 | 1 | 2 | 3
+```
+
+### Multiple atlases
+
+Each `loadTextureAtlas()` call returns an independent `PackedAtlas` with its own baked texture and name map. Call it once per source atlas and cache the result yourself.
 
 ---
 

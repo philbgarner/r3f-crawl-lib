@@ -27,6 +27,8 @@ export type PlayerNetState = {
   alive: boolean;
   /** Yaw in radians. Optional — omit when server doesn't track facing. */
   facing?: number;
+  /** Arbitrary client-defined metadata (e.g. sprite choice) broadcast to all peers. */
+  meta?: Record<string, unknown>;
 };
 
 /** Broadcast by the server after every accepted action. */
@@ -56,7 +58,7 @@ export type ActionTransport = {
    * whether this client is the room host (first to join). Non-host clients
    * also receive the dungeon config so they can generate the same dungeon.
    */
-  connect(): Promise<{
+  connect(meta?: Record<string, unknown>): Promise<{
     playerId: string;
     isHost: boolean;
     dungeonConfig?: Record<string, unknown>;
@@ -93,6 +95,13 @@ export type ActionTransport = {
    * Send a chat message to all players in the room.
    */
   sendChat(text: string): void;
+
+  /**
+   * Send arbitrary metadata to the server to be broadcast to all peers via
+   * the state snapshot. Useful for things like sprite choice that other
+   * clients need to know but that the server doesn't act on.
+   */
+  sendMeta(meta: Record<string, unknown>): void;
 
   /**
    * Register a handler that fires whenever a chat message is received.

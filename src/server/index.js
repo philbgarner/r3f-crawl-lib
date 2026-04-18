@@ -48,7 +48,8 @@ const PORT = Number(process.env.PORT ?? 3001)
 /**
  * @typedef {{
  *   x: number, y: number, hp: number, maxHp: number,
- *   alive: boolean, facing: number, ws: import('ws').WebSocket
+ *   alive: boolean, facing: number, meta: Record<string,unknown>,
+ *   ws: import('ws').WebSocket
  * }} RoomPlayer
  *
  * @typedef {{
@@ -128,7 +129,7 @@ function findSpawnPos(room, preferX, preferY) {
 function stateSnapshot(room) {
   const players = {}
   for (const [id, p] of room.players) {
-    players[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, alive: p.alive, facing: p.facing }
+    players[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, alive: p.alive, facing: p.facing, meta: p.meta }
   }
   return JSON.stringify({ type: 'state', players, turn: room.turn })
 }
@@ -185,9 +186,9 @@ function applyAction(room, playerId, action) {
 
 const app = express()
 
-// Serve the multiplayer example at the root
+// Redirect root to the multiplayer example so relative asset paths resolve correctly
 app.get('/', (_req, res) => {
-  res.sendFile(path.join(ROOT, 'examples', 'multiplayer', 'index.html'))
+  res.redirect('/examples/localhost/multiplayer/')
 })
 
 // Serve all static assets (examples, dist, node_modules/three)
@@ -230,6 +231,7 @@ wss.on('connection', (ws) => {
         hp: 30, maxHp: 30,
         alive: true,
         facing: 0,
+        meta: (msg.meta && typeof msg.meta === 'object') ? msg.meta : {},
         ws,
       })
 
@@ -306,6 +308,16 @@ wss.on('connection', (ws) => {
       const text = String(msg.text ?? '').trim().slice(0, 200)
       if (!text) return
       broadcastAll(room, { type: 'chat', playerId, text })
+    }
+
+    // ── player_meta ────────────────────────────────────────────────────────
+    if (msg.type === 'player_meta') {
+      const player = room.players.get(playerId)
+      if (!player) return
+      if (msg.meta && typeof msg.meta === 'object') {
+        player.meta = { ...player.meta, ...msg.meta }
+        broadcastAll(room, stateSnapshot(room))
+      }
     }
   })
 

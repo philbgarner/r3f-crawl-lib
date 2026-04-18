@@ -3,7 +3,7 @@
 // Demonstrates per-room theming: press TAB to cycle through theme types.
 // All rooms share the active theme. The seed is fixed so the layout stays the same.
 //
-// Each theme maps to floor/wall/ceiling tile IDs in atlas.png.
+// Each theme maps to floor/wall/ceiling sprite names from the packed atlas.
 // Layers (addLayer) apply per-room tile overrides on top of the corridor base.
 
 const {
@@ -13,6 +13,8 @@ const {
   createDungeonRenderer,
   resolveTheme,
   registerTheme,
+  loadTextureAtlas,
+  packedAtlasResolver,
 } = AtomicCore;
 
 // ---------------------------------------------------------------------------
@@ -28,43 +30,40 @@ const posEl = document.getElementById("pos");
 const themeEl = document.getElementById("theme");
 
 // ---------------------------------------------------------------------------
-// Tile ID lookup — atlas.png is 512×1024 px, 64 px tiles, 8 columns.
-// Tile ID = (pixelY / 64) * 8 + (pixelX / 64)
-//
-// Values come from atlas.json floorTypes / wallTypes / ceilingTypes entries.
+// Sprite name lookup — textureAtlas.png named sprites
 // ---------------------------------------------------------------------------
 
-const FLOOR_IDS = {
-  Cobblestone: 19, // uv [192, 128]
-  Flagstone: 20, // uv [256, 128]
-  Concrete: 22, // uv [384, 128]
-  Tile: 29, // uv [320, 192]
-  Dirt: 38, // uv [384, 256]
-  DiamondTile: 45,
-  Grate: 46,
-  WoodFloor: 6,
-  ParkayFloor: 4,
+const FLOOR_NAMES = {
+  Cobblestone: "flagstone_colored_stone.png",
+  Flagstone:   "flagstone_floor_stone.png",
+  Concrete:    "concrete_stone.png",
+  Tile:        "fancy_tile_floor_stone.png",
+  Dirt:        "floor_dirt.png",
+  DiamondTile: "flagstone_colored_fancy_stone.png",
+  Grate:       "grille_metal.png",
+  WoodFloor:   "plank_floor_wood.png",
+  ParkayFloor: "parquet_floor_wood.png",
 };
 
-const WALL_IDS = {
-  MetalPanel: 55,
-  MetalWall: 63,
-  ReinforcedWall: 7,
-  Cobblestone: 19, // uv [192, 128]
-  Brick: 16, // uv [0,   128]
-  Concrete: 22, // uv [384, 128]
-  Plaster: 31, // uv [448, 192]
-  Dirt: 38, // uv [384, 256]
-  WoodWall: 5,
-  Grate: 46,
+const WALL_NAMES = {
+  MetalPanel:    "scifi_simple_panel_metal.png",
+  MetalWall:     "scifi_wall_metal.png",
+  ReinforcedWall:"alt_brick_wall_stone.png",
+  Cobblestone:   "cobble_wall_stone.png",
+  Brick:         "brick_wall_stone.png",
+  Concrete:      "concrete_stone.png",
+  Plaster:       "plaster_ceiling.png",
+  Dirt:          "floor_dirt.png",
+  WoodWall:      "jacobean_panel_wall_wood.png",
+  Grate:         "grille_metal.png",
 };
 
-const CEIL_IDS = {
-  Cobblestone: 19, // uv [192, 128]
-  Flagstone: 20, // uv [256, 128]
-  Concrete: 22, // uv [384, 128]
-  Tile: 29, // uv [320, 192]
-  Dirt: 38, // uv [384, 256]
+const CEIL_NAMES = {
+  Cobblestone: "plaster_ceiling.png",
+  Flagstone:   "flagstone_floor_stone.png",
+  Concrete:    "concrete_stone.png",
+  Tile:        "fancy_tile_floor_stone.png",
+  Dirt:        "floor_dirt.png",
 };
 
 // Optional: register a custom theme. Its name becomes a valid ThemeSelector key.
@@ -82,45 +81,39 @@ registerTheme("void", {
 
 const THEME_PALETTES = {
   dungeon: {
-    floors: [FLOOR_IDS.Cobblestone, FLOOR_IDS.Flagstone],
-    walls: [WALL_IDS.Cobblestone, WALL_IDS.Brick],
-    ceils: [CEIL_IDS.Cobblestone, CEIL_IDS.Flagstone],
+    floors: [FLOOR_NAMES.Cobblestone, FLOOR_NAMES.Flagstone],
+    walls:  [WALL_NAMES.Cobblestone, WALL_NAMES.Brick],
+    ceils:  [CEIL_NAMES.Cobblestone, CEIL_NAMES.Flagstone],
   },
   crypt: {
-    floors: [FLOOR_IDS.Flagstone, FLOOR_IDS.Cobblestone],
-    walls: [WALL_IDS.Plaster, WALL_IDS.Brick, WALL_IDS.Cobblestone],
-    ceils: [CEIL_IDS.Flagstone, CEIL_IDS.Cobblestone],
+    floors: [FLOOR_NAMES.Flagstone, FLOOR_NAMES.Cobblestone],
+    walls:  [WALL_NAMES.Plaster, WALL_NAMES.Brick, WALL_NAMES.Cobblestone],
+    ceils:  [CEIL_NAMES.Flagstone, CEIL_NAMES.Cobblestone],
   },
   catacomb: {
-    floors: [FLOOR_IDS.Dirt, FLOOR_IDS.Cobblestone, FLOOR_IDS.Flagstone],
-    walls: [WALL_IDS.Dirt, WALL_IDS.Cobblestone, WALL_IDS.Brick],
-    ceils: [CEIL_IDS.Dirt, CEIL_IDS.Concrete, CEIL_IDS.Cobblestone],
+    floors: [FLOOR_NAMES.Dirt, FLOOR_NAMES.Cobblestone, FLOOR_NAMES.Flagstone],
+    walls:  [WALL_NAMES.Dirt, WALL_NAMES.Cobblestone, WALL_NAMES.Brick],
+    ceils:  [CEIL_NAMES.Dirt, CEIL_NAMES.Concrete, CEIL_NAMES.Cobblestone],
   },
   domestic: {
-    floors: [FLOOR_IDS.ParkayFloor, FLOOR_IDS.WoodFloor, FLOOR_IDS.DiamondTile],
-    walls: [WALL_IDS.Plaster, WALL_IDS.WoodWall],
-    ceils: [CEIL_IDS.Concrete, CEIL_IDS.Flagstone],
+    floors: [FLOOR_NAMES.ParkayFloor, FLOOR_NAMES.WoodFloor, FLOOR_NAMES.DiamondTile],
+    walls:  [WALL_NAMES.Plaster, WALL_NAMES.WoodWall],
+    ceils:  [CEIL_NAMES.Concrete, CEIL_NAMES.Flagstone],
   },
   industrial: {
-    floors: [FLOOR_IDS.DiamondTile, FLOOR_IDS.Concrete, FLOOR_IDS.Tile],
-    walls: [
-      WALL_IDS.Concrete,
-      WALL_IDS.Brick,
-      WALL_IDS.Grate,
-      WALL_IDS.MetalWall,
-      WALL_IDS.ReinforcedWall,
-    ],
-    ceils: [CEIL_IDS.Concrete, CEIL_IDS.Tile],
+    floors: [FLOOR_NAMES.DiamondTile, FLOOR_NAMES.Concrete, FLOOR_NAMES.Tile],
+    walls:  [WALL_NAMES.Concrete, WALL_NAMES.Brick, WALL_NAMES.Grate, WALL_NAMES.MetalWall, WALL_NAMES.ReinforcedWall],
+    ceils:  [CEIL_NAMES.Concrete, CEIL_NAMES.Tile],
   },
   ruins: {
-    floors: [FLOOR_IDS.Cobblestone, FLOOR_IDS.Dirt, FLOOR_IDS.Flagstone],
-    walls: [WALL_IDS.Cobblestone, WALL_IDS.Brick, WALL_IDS.Dirt],
-    ceils: [CEIL_IDS.Cobblestone, CEIL_IDS.Flagstone, CEIL_IDS.Dirt],
+    floors: [FLOOR_NAMES.Cobblestone, FLOOR_NAMES.Dirt, FLOOR_NAMES.Flagstone],
+    walls:  [WALL_NAMES.Cobblestone, WALL_NAMES.Brick, WALL_NAMES.Dirt],
+    ceils:  [CEIL_NAMES.Cobblestone, CEIL_NAMES.Flagstone, CEIL_NAMES.Dirt],
   },
   void: {
-    floors: [FLOOR_IDS.Concrete],
-    walls: [WALL_IDS.Concrete],
-    ceils: [CEIL_IDS.Concrete],
+    floors: [FLOOR_NAMES.Concrete],
+    walls:  [WALL_NAMES.Concrete],
+    ceils:  [CEIL_NAMES.Concrete],
   },
 };
 
@@ -135,11 +128,11 @@ const THEME_COLORS = {
   void: "#606080",
 };
 
-function tileIdsFor(def) {
+function tileNamesFor(def) {
   return {
-    floor: FLOOR_IDS[def.floorType] ?? 19,
-    wall: WALL_IDS[def.wallType] ?? 16,
-    ceil: CEIL_IDS[def.ceilingType] ?? 19,
+    floor: FLOOR_NAMES[def.floorType] ?? "flagstone_floor_stone.png",
+    wall:  WALL_NAMES[def.wallType]   ?? "brick_wall_stone.png",
+    ceil:  CEIL_NAMES[def.ceilingType] ?? "plaster_ceiling.png",
   };
 }
 
@@ -194,13 +187,13 @@ function buildRoomMap(outputs) {
 
     const def = resolveTheme(themeName, {});
     const name = themeName;
-    const ids = tileIdsFor(def);
+    const names = tileNamesFor(def);
     const palette = THEME_PALETTES[name] ?? {
-      floors: [ids.floor],
-      walls: [ids.wall],
-      ceils: [ids.ceil],
+      floors: [names.floor],
+      walls:  [names.wall],
+      ceils:  [names.ceil],
     };
-    roomMap[rid] = { ...ids, palette, name };
+    roomMap[rid] = { ...names, palette, name };
   }
 }
 
@@ -266,23 +259,20 @@ game.events.on("turn", () => {
 
 let renderer;
 
-// Use the preloaded base64 data URL (set by atlas-data.js) so WebGL can
-// upload the texture when running directly from file://.
-const atlasImg = new Image();
-atlasImg.onload = () => {
+async function init() {
+  const atlasJson = await fetch("../textureAtlas.json").then((r) => r.json());
+  const packed = await loadTextureAtlas("../textureAtlas.png", atlasJson, {
+    showLoadingScreen: false,
+  });
+  const resolver = packedAtlasResolver(packed);
+
   renderer = createDungeonRenderer(viewportEl, game, {
-    atlas: {
-      image: atlasImg,
-      tileWidth: 64,
-      tileHeight: 64,
-      sheetWidth: 512,
-      sheetHeight: 1024,
-      columns: 8,
-    },
+    packedAtlas: packed,
+    tileNameResolver: resolver,
     // Corridor base tiles — rooms override these via layers below.
-    floorTileId: 19, // Cobblestone uv [192, 128]
-    ceilTileId: 19,
-    wallTileId: 16, // Brick       uv [0,   128]
+    floorTile: "flagstone_colored_stone.png",
+    ceilTile:  "plaster_ceiling.png",
+    wallTile:  "brick_wall_stone.png",
   });
 
   // ── Per-room tile layers ─────────────────────────────────────────────────
@@ -299,8 +289,8 @@ atlasImg.onload = () => {
       const theme = roomMap[rid];
       if (!theme) return null;
       const { floors } = theme.palette;
-      const tileId = floors[cellHash(cx, cz, rid ^ 0x1111) % floors.length];
-      return { tileId };
+      const tile = floors[cellHash(cx, cz, rid ^ 0x1111) % floors.length];
+      return { tile };
     },
   });
 
@@ -313,8 +303,8 @@ atlasImg.onload = () => {
       const theme = roomMap[rid];
       if (!theme) return null;
       const { walls } = theme.palette;
-      const tileId = walls[cellHash(cx, cz, rid ^ 0x5555) % walls.length];
-      return { tileId };
+      const tile = walls[cellHash(cx, cz, rid ^ 0x5555) % walls.length];
+      return { tile };
     },
   });
 
@@ -327,14 +317,15 @@ atlasImg.onload = () => {
       const theme = roomMap[rid];
       if (!theme) return null;
       const { ceils } = theme.palette;
-      const tileId = ceils[cellHash(cx, cz, rid ^ 0x9999) % ceils.length];
-      return { tileId };
+      const tile = ceils[cellHash(cx, cz, rid ^ 0x9999) % ceils.length];
+      return { tile };
     },
   });
 
   game.generate();
-};
-atlasImg.src = '../basic/atlas.png';
+}
+
+init();
 
 // ---------------------------------------------------------------------------
 // Events

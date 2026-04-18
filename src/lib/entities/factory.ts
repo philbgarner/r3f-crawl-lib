@@ -3,7 +3,7 @@
 // Lightweight entity factories. Each produces a correctly-typed EntityBase with
 // an auto-generated id. No DEFAULT_MONSTER_TEMPLATES — callers supply all opts.
 
-import type { EntityBase, EntityKind } from "./types";
+import type { EntityBase, EntityKind, SpriteMap } from "./types";
 import type { RpsEffect } from "./effects";
 
 let _nextEntityId = 1;
@@ -22,6 +22,7 @@ type BaseOpts = {
   x: number;
   z: number;
   faction?: string;
+  spriteMap?: SpriteMap;
 };
 
 function makeBase(
@@ -45,6 +46,7 @@ function makeBase(
     blocksMove: false,
     faction: opts.faction ?? "none",
     tick: 0,
+    ...(opts.spriteMap !== undefined ? { spriteMap: opts.spriteMap } : {}),
     ...overrides,
   };
 }

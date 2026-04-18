@@ -11,6 +11,8 @@ const {
   createDungeonRenderer,
   createItem,
   showInventory,
+  loadTextureAtlas,
+  packedAtlasResolver,
 } = AtomicCore;
 
 // ---------------------------------------------------------------------------
@@ -77,22 +79,25 @@ const game = createGame(document.body, {
 // ---------------------------------------------------------------------------
 
 let renderer;
-const atlasImg = new Image();
-atlasImg.onload = () => {
+
+async function init() {
+  const atlasJson = await fetch("../textureAtlas.json").then((r) => r.json());
+  const packed = await loadTextureAtlas("../textureAtlas.png", atlasJson, {
+    showLoadingScreen: false,
+  });
+  const resolver = packedAtlasResolver(packed);
+
   renderer = createDungeonRenderer(viewportEl, game, {
-    atlas: {
-      image: atlasImg,
-      tileWidth: 64, tileHeight: 64,
-      sheetWidth: 512, sheetHeight: 1024,
-      columns: 8,
-    },
-    floorTileId: 20,
-    ceilTileId:  19,
-    wallTileId:  16,
+    packedAtlas: packed,
+    tileNameResolver: resolver,
+    floorTile: "flagstone_floor_stone.png",
+    ceilTile:  "plaster_ceiling.png",
+    wallTile:  "brick_wall_stone.png",
   });
   game.generate();
-};
-atlasImg.src = '../basic/atlas.png';
+}
+
+init();
 
 // ---------------------------------------------------------------------------
 // Events

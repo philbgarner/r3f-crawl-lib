@@ -1,19 +1,15 @@
 // billboard-sprites.js — atomic-core billboard sprite demo
 //
-// Demonstrates the spriteMap API: camera-facing billboard quads with layered
-// sprite rendering and multi-angle tile variants.
+// Demonstrates the spriteMap API: camera-facing billboard quads rendered
+// using named sprites from a packed texture atlas.
 //
-// Four enemy types are placed in the dungeon:
-//   Goblin   — 2-layer body + weapon overlay
-//   Skeleton — 4-angle variants (front/back/left/right tiles differ)
-//   Orc      — 1-layer, front + back only (minimal angle setup)
-//   Slime    — single tile, no angle variants
+// Three enemy types are placed in the dungeon:
+//   Goblin   — goblin_placeholder1.png
+//   Skeleton — skel_placeholder1.png
+//   Orc      — troll_placeholder1.png
 //
 // Each actor's `spriteMap` field activates billboard rendering automatically;
-// no spriteMap = box geometry fallback (same as before).
-//
-// Atlas layout (atlas.png): 512×1024 px, 64 px tiles → 8 columns.
-// Tile ID = row * 8 + col  (row-major, top-left origin).
+// no spriteMap = box geometry fallback.
 
 const {
   createGame,
@@ -21,6 +17,8 @@ const {
   attachSpawner,
   attachKeybindings,
   createDungeonRenderer,
+  loadTextureAtlas,
+  packedAtlasResolver,
 } = AtomicCore;
 
 const viewportEl = document.getElementById("viewport");
@@ -33,68 +31,45 @@ const posEl = document.getElementById("pos");
 // spriteMap definitions
 // ---------------------------------------------------------------------------
 
-// Goblin: two layers — body (tile 20) + weapon overlay (tile 21).
-// When viewed from behind the "S" angle swaps both tiles to back-facing variants.
 function goblinSpriteMap() {
   return {
     frameSize: { w: 64, h: 64 },
     layers: [
-      { tileId: 20, opacity: 1.0 },
-      { tileId: 21, offsetY: 0.15, opacity: 0.85 },
+      { tile: "mob_goblin_base.png", opacity: 1.0 },
+      {
+        tile: "mob_goblin_happy_head.png",
+        opacity: 1.0,
+        bob: { amplitudeY: 0.015, speed: 2 },
+      },
     ],
-    angles: {
-      S: [
-        { layerIndex: 0, tileId: 28 },
-        { layerIndex: 1, tileId: 29 },
-      ],
-      SW: [{ layerIndex: 0, tileId: 27 }],
-      SE: [{ layerIndex: 0, tileId: 27 }],
-    },
   };
 }
 
-// Skeleton: single body layer with four distinct angle tiles.
 function skeletonSpriteMap() {
   return {
     frameSize: { w: 64, h: 64 },
-    layers: [{ tileId: 16, opacity: 1.0 }],
-    angles: {
-      N: [{ layerIndex: 0, tileId: 16 }],
-      NE: [{ layerIndex: 0, tileId: 17 }],
-      E: [{ layerIndex: 0, tileId: 17 }],
-      SE: [{ layerIndex: 0, tileId: 24 }],
-      S: [{ layerIndex: 0, tileId: 24 }],
-      SW: [{ layerIndex: 0, tileId: 25 }],
-      W: [{ layerIndex: 0, tileId: 25 }],
-      NW: [{ layerIndex: 0, tileId: 16 }],
-    },
+    layers: [
+      { tile: "mob_skel_base.png", opacity: 1.0 },
+      {
+        tile: "mob_skel_happy_head.png",
+        opacity: 1.0,
+        bob: { amplitudeY: 0.015, speed: 2 },
+      },
+    ],
   };
 }
 
-// Orc: one layer, front and back only.
-// No side-view tiles exist, so omitting NE/E/SE/SW/W/NW falls back to the
-// base layer (tileId 32 — front-facing) for those directions automatically.
-function orcSpriteMap() {
+function trollSpriteMap() {
   return {
     frameSize: { w: 64, h: 64 },
     layers: [
-      { tileId: 32, opacity: 1.0 }, // front-facing tile
+      { tile: "mob_troll_base.png", opacity: 1.0 },
+      {
+        tile: "mob_troll_happy_head.png",
+        opacity: 1.0,
+        bob: { amplitudeY: 0.015, speed: 2 },
+      },
     ],
-    angles: {
-      // Only the rear sector needs an override; everything else uses the base.
-      S:  [{ layerIndex: 0, tileId: 33 }], // back-facing tile
-      SE: [{ layerIndex: 0, tileId: 33 }],
-      SW: [{ layerIndex: 0, tileId: 33 }],
-    },
-  };
-}
-
-// Slime: one tile, no angle variants — simplest possible spriteMap.
-function slimeSpriteMap() {
-  return {
-    frameSize: { w: 64, h: 64 },
-    layers: [{ tileId: 19, opacity: 0.9 }],
-    atlasImg: "./monsters.png",
   };
 }
 
@@ -107,10 +82,9 @@ let spawned = 0;
 const MAX_ENTITIES = 8;
 
 const TYPES = [
-  { type: "goblin",   spriteMap: goblinSpriteMap   },
-  { type: "skeleton", spriteMap: skeletonSpriteMap  },
-  { type: "orc",      spriteMap: orcSpriteMap       },
-  { type: "slime",    spriteMap: slimeSpriteMap     },
+  { type: "goblin", spriteMap: goblinSpriteMap },
+  { type: "skeleton", spriteMap: skeletonSpriteMap },
+  { type: "troll", spriteMap: trollSpriteMap },
 ];
 
 // ---------------------------------------------------------------------------
@@ -152,24 +126,24 @@ const game = createGame(document.body, {
 
 let renderer;
 
-const atlasImg = new Image();
-atlasImg.onload = () => {
+async function init() {
+  const atlasJson = await fetch("../textureAtlas.json").then((r) => r.json());
+  const packed = await loadTextureAtlas("../textureAtlas.png", atlasJson, {
+    showLoadingScreen: false,
+  });
+  const resolver = packedAtlasResolver(packed);
+
   renderer = createDungeonRenderer(viewportEl, game, {
-    atlas: {
-      image: atlasImg,
-      tileWidth: 64,
-      tileHeight: 64,
-      sheetWidth: 512,
-      sheetHeight: 1024,
-      columns: 8,
-    },
-    floorTileId: 20,
-    ceilTileId: 19,
-    wallTileId: 16,
+    packedAtlas: packed,
+    tileNameResolver: resolver,
+    floorTile: "flagstone_floor_stone.png",
+    ceilTile: "plaster_ceiling.png",
+    wallTile: "brick_wall_stone.png",
   });
   game.generate();
-};
-atlasImg.src = "../basic/atlas.png";
+}
+
+init();
 
 // ---------------------------------------------------------------------------
 // Spawner — places up to MAX_ENTITIES billboard-sprite enemies

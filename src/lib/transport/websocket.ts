@@ -64,12 +64,12 @@ export function createWebSocketTransport(url: string): ActionTransport {
       return _playerId;
     },
 
-    connect() {
+    connect(meta?: Record<string, unknown>) {
       return new Promise((resolve, reject) => {
         ws = new WebSocket(url);
 
         ws.onopen = () => {
-          ws!.send(JSON.stringify({ type: 'join', roomId: 'default' }));
+          ws!.send(JSON.stringify({ type: 'join', roomId: 'default', meta: meta ?? {} }));
         };
 
         ws.onmessage = (evt) => {
@@ -122,6 +122,11 @@ export function createWebSocketTransport(url: string): ActionTransport {
     sendChat(text: string) {
       if (!ws || !_playerId) return;
       ws.send(JSON.stringify({ type: 'chat', text }));
+    },
+
+    sendMeta(meta: Record<string, unknown>) {
+      if (!ws || !_playerId) return;
+      ws.send(JSON.stringify({ type: 'player_meta', meta }));
     },
 
     onChat(handler: (msg: { playerId: string; text: string }) => void) {

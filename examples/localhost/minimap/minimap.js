@@ -10,7 +10,61 @@ const {
   attachKeybindings,
   attachMinimap,
   createDungeonRenderer,
+  loadTextureAtlas,
+  packedAtlasResolver,
 } = AtomicCore;
+
+// ---------------------------------------------------------------------------
+// spriteMap definitions
+// ---------------------------------------------------------------------------
+
+function goblinSpriteMap() {
+  return {
+    frameSize: { w: 64, h: 64 },
+    layers: [
+      { tile: "mob_goblin_base.png", opacity: 1.0 },
+      {
+        tile: "mob_goblin_happy_head.png",
+        opacity: 1.0,
+        bob: { amplitudeY: 0.015, speed: 2 },
+      },
+    ],
+  };
+}
+
+function skeletonSpriteMap() {
+  return {
+    frameSize: { w: 64, h: 64 },
+    layers: [
+      { tile: "mob_skel_base.png", opacity: 1.0 },
+      {
+        tile: "mob_skel_happy_head.png",
+        opacity: 1.0,
+        bob: { amplitudeY: 0.015, speed: 2 },
+      },
+    ],
+  };
+}
+
+function trollSpriteMap() {
+  return {
+    frameSize: { w: 64, h: 64 },
+    layers: [
+      { tile: "mob_troll_base.png", opacity: 1.0 },
+      {
+        tile: "mob_troll_happy_head.png",
+        opacity: 1.0,
+        bob: { amplitudeY: 0.015, speed: 2 },
+      },
+    ],
+  };
+}
+
+const TYPES = [
+  { type: "goblin", spriteMap: goblinSpriteMap },
+  { type: "skeleton", spriteMap: skeletonSpriteMap },
+  { type: "troll", spriteMap: trollSpriteMap },
+];
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -39,7 +93,7 @@ const game = createGame(document.body, {
   dungeon: {
     width: 40,
     height: 40,
-    seed: 0xdeadbeef,
+    seed: (Math.random() * 0xffffffff) >>> 0,
     roomMinSize: 5,
     roomMaxSize: 11,
     roomCount: 12,
@@ -91,39 +145,29 @@ attachMinimap(game, minimapCanvas, {
 });
 
 // ---------------------------------------------------------------------------
-// 3D renderer — with tile atlas
+// 3D renderer
 // ---------------------------------------------------------------------------
-//
-// atlas.png: 512×1024 px, 64 px tiles → 8 columns.
-// Tile ID = (pixelY / 64) * 8 + (pixelX / 64)  (row-major, top-left origin).
-//
-// atlas.json entries used (uv = [pixelX, pixelY]):
-//   Floor   – Flagstone   uv [256, 128] → id 20
-//   Ceiling – Cobblestone uv [192, 128] → id 19
-//   Wall    – Brick       uv [0,   128] → id 16
 
 let renderer;
 
-// Use the preloaded base64 data URL (set by atlas-data.js) so WebGL can
-// upload the texture when running directly from file://.
-const atlasImg = new Image();
-atlasImg.onload = () => {
+async function init() {
+  const atlasJson = await fetch("../textureAtlas.json").then((r) => r.json());
+  const packed = await loadTextureAtlas("../textureAtlas.png", atlasJson, {
+    showLoadingScreen: false,
+  });
+  const resolver = packedAtlasResolver(packed);
+
   renderer = createDungeonRenderer(viewportEl, game, {
-    atlas: {
-      image: atlasImg,
-      tileWidth: 64,
-      tileHeight: 64,
-      sheetWidth: 512,
-      sheetHeight: 1024,
-      columns: 8,
-    },
-    floorTileId: 20, // Flagstone   uv [256, 128]
-    ceilTileId: 19,  // Cobblestone uv [192, 128]
-    wallTileId: 16,  // Brick       uv [0,   128]
+    packedAtlas: packed,
+    tileNameResolver: resolver,
+    floorTile: "flagstone_floor_stone.png",
+    ceilTile: "plaster_ceiling.png",
+    wallTile: "brick_wall_stone.png",
   });
   game.generate();
-};
-atlasImg.src = '../basic/atlas.png';
+}
+
+init();
 
 // ---------------------------------------------------------------------------
 // Spawn enemies — one per room, capped, skipping early rooms
@@ -134,10 +178,13 @@ attachSpawner(game, {
     if (spawned >= MAX_ENEMIES) return null;
     if (roomId < 2) return null;
     if (Math.random() > 0.55) return null;
+
+    const def = TYPES[spawned % TYPES.length];
     spawned++;
+
     const e = createEnemy({
-      type: "goblin",
-      sprite: "g",
+      type: def.type,
+      sprite: def.type,
       x,
       z: y,
       hp: 8,
@@ -147,6 +194,7 @@ attachSpawner(game, {
       speed: 6,
       danger: 1,
       xp: 10,
+      spriteMap: def.spriteMap(),
     });
     enemies.push(e);
     return e;

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>atomic-core — Texture Loader</title>
+        <link rel="stylesheet" href="../basic/styles.css" />
+        <style>
+            #sidebar h2 {
+                font-size: 7px;
+                color: var(--gold-dim);
+                letter-spacing: 0.1em;
+                margin-top: 8px;
+                border-bottom: 1px solid var(--border);
+                padding-bottom: 6px;
+            }
+            #sprite-list {
+                font-size: 7px;
+                line-height: 2;
+                color: var(--desc);
+                max-height: 320px;
+                overflow-y: auto;
+            }
+            #sprite-list span { color: var(--gold); }
+            #packed-canvas {
+                display: block;
+                max-width: 100%;
+                image-rendering: pixelated;
+                border: 1px solid var(--border);
+                margin-top: 8px;
+            }
+            #canvas-wrap {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 8px;
+                padding: 16px;
+            }
+            #canvas-title {
+                font-size: 8px;
+                color: var(--gold-dim);
+                letter-spacing: 0.1em;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="sidebar">
+            <h1>Texture Loader</h1>
+
+            <div id="stats">
+                Sprites: <span id="sprite-count">—</span><br />
+                Texture: <span id="tex-size">—</span><br />
+                Status: <span id="status">loading...</span>
+            </div>
+
+            <h2>Packed Sprites (first 20)</h2>
+            <div id="sprite-list"></div>
+
+            <div id="controls">
+                Loaded from TEXTURE_ATLAS_DATA_URL<br />
+                via loadTextureAtlas()
+            </div>
+        </div>
+
+        <div id="canvas-wrap">
+            <div id="canvas-title">Baked Packed Texture</div>
+            <canvas id="packed-canvas"></canvas>
+        </div>
+
+        <script src="./textureAtlas-data.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/gh/philbgarner/atomic-core@v0.4.9/dist/atomic-core.iife.js"
+            defer
+        ></script>
+        <script src="./texture-loader.js" defer></script>
+    </body>
+</html>

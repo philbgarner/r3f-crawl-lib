@@ -1,6 +1,7 @@
 import { GameHandle } from '../api/createGame';
 import { EntityBase } from '../entities/types';
 import { DirectionFaceMap } from './tileAtlas';
+import { PackedAtlas } from './textureLoader';
 /**
  * dungeonRenderer.ts
  *
@@ -12,16 +13,14 @@ import { DirectionFaceMap } from './tileAtlas';
  *   const renderer = createDungeonRenderer(document.getElementById('viewport'), game);
  *
  * Usage (tile atlas):
+ *   const packed = await loadTextureAtlas('sprites.png', atlasJson);
+ *   const resolver = packedAtlasResolver(packed);
  *   const renderer = createDungeonRenderer(el, game, {
- *     atlas: {
- *       texture,
- *       tileWidth: 16, tileHeight: 16,
- *       sheetWidth: 256, sheetHeight: 256,
- *       columns: 16,
- *     },
- *     floorTileId: 0,
- *     ceilTileId: 1,
- *     wallTileId: 2,
+ *     packedAtlas: packed,
+ *     tileNameResolver: resolver,
+ *     floorTile: 'stone_floor',
+ *     ceilTile:  'ceiling_stone',
+ *     wallTile:  'brick_wall',
  *   });
  *
  *   // Pass live entity list on every turn:
@@ -30,25 +29,6 @@ import { DirectionFaceMap } from './tileAtlas';
 import * as THREE from "three";
 export type { FaceTileSpec, DirectionFaceMap } from './tileAtlas';
 export type { SpriteMap } from './billboardSprites';
-/** Describes a sprite-sheet atlas used for tile texturing. */
-export type TileAtlasConfig = {
-    /**
-     * Pre-loaded sprite sheet image.  Pass an HTMLImageElement so the texture
-     * is created by the renderer's own bundled Three.js instance, avoiding
-     * cross-instance mismatch when Three.js is also imported as a global.
-     */
-    image: HTMLImageElement;
-    /** Width of a single tile in pixels. */
-    tileWidth: number;
-    /** Height of a single tile in pixels. */
-    tileHeight: number;
-    /** Total width of the sprite sheet in pixels. */
-    sheetWidth: number;
-    /** Total height of the sprite sheet in pixels. */
-    sheetHeight: number;
-    /** Number of tile columns in the sprite sheet. */
-    columns: number;
-};
 export type DungeonRendererOptions = {
     /** Camera field of view in degrees. Default: 75. */
     fov?: number;
@@ -64,31 +44,35 @@ export type DungeonRendererOptions = {
     fogColor?: string;
     /** Smoothing factor for camera animation (0 = instant, 1 = never arrives). Default: 0.18. */
     lerpFactor?: number;
+    /** When provided the dungeon geometry uses the packed atlas shader instead of plain MeshStandardMaterial. */
+    packedAtlas?: PackedAtlas;
     /**
-     * When provided the dungeon geometry uses the tile atlas shader instead of
-     * plain MeshStandardMaterial.  Requires floorTileId / ceilTileId / wallTileId.
+     * Converts a string tile name to a numeric atlas tile ID.
+     * Required when any tile option is specified as a string name.
+     * Use `packedAtlasResolver(packed)` for baked-texture atlases,
+     * or provide a custom function wrapping AtlasIndex.someCategory.idByName().
      */
-    atlas?: TileAtlasConfig;
-    /** Atlas tile index (0-based) for floor faces. Default: 0. */
-    floorTileId?: number;
-    /** Atlas tile index (0-based) for ceiling faces. Default: 0. */
-    ceilTileId?: number;
-    /** Atlas tile index (0-based) for wall faces. Default: 0. */
-    wallTileId?: number;
+    tileNameResolver?: (name: string) => number;
+    /** Floor tile: string name (resolved via tileNameResolver) or numeric tile index. Default: 0. */
+    floorTile?: string | number;
+    /** Ceiling tile: string name or numeric tile index. Default: 0. */
+    ceilTile?: string | number;
+    /** Wall tile: string name or numeric tile index. Default: 0. */
+    wallTile?: string | number;
     /**
      * Per-direction tile overrides for wall faces.
-     * Each entry may specify a different tile ID and/or UV rotation (0–3 × 90°).
-     * Falls back to `wallTileId` for any direction not specified.
+     * Each entry may specify a different tile and/or UV rotation (0–3 × 90°).
+     * Falls back to `wallTile` for any direction not specified.
      */
     wallTiles?: DirectionFaceMap;
     /**
      * Per-direction tile overrides for floor skirt (edge) faces.
-     * Falls back to `floorTileId` for any direction not specified.
+     * Falls back to `floorTile` for any direction not specified.
      */
     floorSkirtTiles?: DirectionFaceMap;
     /**
      * Per-direction tile overrides for ceiling skirt (edge) faces.
-     * Falls back to `ceilTileId` for any direction not specified.
+     * Falls back to `ceilTile` for any direction not specified.
      */
     ceilSkirtTiles?: DirectionFaceMap;
     /**
@@ -102,11 +86,11 @@ export type DungeonRendererOptions = {
 export type LayerTarget = "floor" | "ceil" | "wall" | "floorSkirt" | "ceilSkirt";
 /**
  * Return value from a `LayerSpec.filter` callback.
- * Return an object (optionally overriding `tileId`/`rotation`) to include the
+ * Return an object (optionally overriding `tile`/`rotation`) to include the
  * face, or a falsy value to exclude it.
  */
 export type LayerFaceResult = {
-    tileId?: number;
+    tile?: string | number;
     rotation?: number;
 } | null | false | undefined;
 export type LayerSpec = {
@@ -116,7 +100,7 @@ export type LayerSpec = {
     material: THREE.Material;
     /**
      * Called for each candidate face.  Return an object to include the face
-     * (optionally overriding `tileId` and `rotation`), or a falsy value to skip.
+     * (optionally overriding `tile` and `rotation`), or a falsy value to skip.
      * `direction` is provided for 'wall', 'floorSkirt', and 'ceilSkirt' targets.
      * Default: include every face with tileId 0, rotation 0.
      */
