@@ -174,17 +174,27 @@ function computeLayout(
 type Ctx2D = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
 function blitSprite(ctx: Ctx2D, source: ImageBitmap, e: LayoutEntry): void {
-  const { frame: af, destX, destY, outW, outH } = e;
+  const { frame: af, destX, destY } = e;
   const src = af.frame;
+  const sss = af.spriteSourceSize;
 
   ctx.save();
-  ctx.translate(destX + outW / 2, destY + outH / 2);
 
-  // Undo 90° CW packer rotation so the sprite is stored right-way-up.
-  // frame.rotation is NOT applied here — it is forwarded to the shader.
-  if (af.rotated) ctx.rotate(-Math.PI / 2);
-
-  ctx.drawImage(source, src.x, src.y, src.w, src.h, -outW / 2, -outH / 2, outW, outH);
+  if (af.rotated) {
+    // Packer stored the sprite rotated 90° CW to save space; undo it.
+    // frame.w/h are the ORIGINAL dimensions. Physical atlas storage is src.h × src.w (swapped).
+    // After rotate(-PI/2) a src.h×src.w block becomes src.w×src.h = sss.w×sss.h in screen space.
+    const cx = destX + sss.x + sss.w / 2;
+    const cy = destY + sss.y + sss.h / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 2);
+    ctx.drawImage(source, src.x, src.y, src.h, src.w, -src.h / 2, -src.w / 2, src.h, src.w);
+  } else {
+    // No packer rotation: place frame pixels at spriteSourceSize offset, pixel-perfect (no scaling).
+    // frame.rotation is NOT baked here — it is forwarded to the shader via PackedSprite.rotation.
+    ctx.drawImage(source, src.x, src.y, src.w, src.h,
+      destX + sss.x, destY + sss.y, src.w, src.h);
+  }
 
   ctx.restore();
 }

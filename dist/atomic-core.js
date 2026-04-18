@@ -3531,12 +3531,17 @@ function computeLayout(frames) {
 	throw new Error("[textureLoader] Sprites cannot fit into a 4096×4096 texture.");
 }
 function blitSprite(ctx, source, e) {
-	const { frame: af, destX, destY, outW, outH } = e;
+	const { frame: af, destX, destY } = e;
 	const src = af.frame;
+	const sss = af.spriteSourceSize;
 	ctx.save();
-	ctx.translate(destX + outW / 2, destY + outH / 2);
-	if (af.rotated) ctx.rotate(-Math.PI / 2);
-	ctx.drawImage(source, src.x, src.y, src.w, src.h, -outW / 2, -outH / 2, outW, outH);
+	if (af.rotated) {
+		const cx = destX + sss.x + sss.w / 2;
+		const cy = destY + sss.y + sss.h / 2;
+		ctx.translate(cx, cy);
+		ctx.rotate(-Math.PI / 2);
+		ctx.drawImage(source, src.x, src.y, src.h, src.w, -src.h / 2, -src.w / 2, src.h, src.w);
+	} else ctx.drawImage(source, src.x, src.y, src.w, src.h, destX + sss.x, destY + sss.y, src.w, src.h);
 	ctx.restore();
 }
 function injectOverlay(text, container) {
