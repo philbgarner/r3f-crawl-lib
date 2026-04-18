@@ -7,7 +7,7 @@
 //      and per-sprite enable/disable checkboxes that trigger live repacking.
 //   4. Demonstrates resolveSprite() by both name and insertion-order id.
 
-const { loadTextureAtlas, resolveSprite } = AtomicCore;
+const { loadMultiAtlas, resolveSprite } = AtomicCore;
 
 const statusEl    = document.getElementById("status");
 const countEl     = document.getElementById("sprite-count");
@@ -27,8 +27,8 @@ const overlayCb   = document.getElementById("overlay-cb");
 
 let currentAtlas  = null;
 let showOverlay   = false;
-let sourceFrames  = null;   // original full frames for JSON popup
-let fullAtlasJson = null;
+let sourceFrames  = null;   // merged frames from all atlases, for JSON popup
+let allSources    = null;   // [{ imageUrl, atlasJson }, ...]
 let enabledSprites = new Set();
 let baseImageData  = null;  // canvas pixels after overlays, used for hover restore
 let repacking      = false;
@@ -117,7 +117,7 @@ function clearHighlight() {
 // ---------------------------------------------------------------------------
 
 function updateToggleLabel() {
-  const allEnabled = enabledSprites.size === Object.keys(sourceFrames).length;
+  const allEnabled = enabledSprites.size === Object.keys(sourceFrames ?? {}).length;
   toggleAllBtn.textContent = allEnabled ? "select none" : "select all";
 }
 
@@ -204,11 +204,11 @@ function showPopup(name) {
 
 toggleAllBtn.addEventListener("click", () => {
   if (repacking) return;
-  const allEnabled = enabledSprites.size === Object.keys(sourceFrames).length;
+  const allEnabled = enabledSprites.size === Object.keys(sourceFrames ?? {}).length;
   if (allEnabled) {
     enabledSprites.clear();
   } else {
-    for (const name of Object.keys(sourceFrames)) enabledSprites.add(name);
+    for (const name of Object.keys(sourceFrames ?? {})) enabledSprites.add(name);
   }
   repack();
 });
@@ -230,14 +230,19 @@ async function repack() {
   repacking = true;
   statusEl.textContent = "repacking...";
 
-  const filtered = {
-    ...fullAtlasJson,
-    frames: Object.fromEntries(
-      Object.entries(fullAtlasJson.frames).filter(([n]) => enabledSprites.has(n))
-    ),
-  };
+  const filteredSources = allSources.map((s) => ({
+    imageUrl: s.imageUrl,
+    atlasJson: {
+      ...s.atlasJson,
+      frames: Object.fromEntries(
+        Object.entries(s.atlasJson.frames).filter(([n]) => enabledSprites.has(n))
+      ),
+    },
+  }));
 
-  if (Object.keys(filtered.frames).length === 0) {
+  const totalFiltered = filteredSources.reduce((sum, s) => sum + Object.keys(s.atlasJson.frames).length, 0);
+
+  if (totalFiltered === 0) {
     outputCanvas.width  = 512;
     outputCanvas.height = 512;
     ctx.clearRect(0, 0, 512, 512);
@@ -253,7 +258,7 @@ async function repack() {
   }
 
   try {
-    const atlas = await loadTextureAtlas("../textureAtlas.png", filtered, {
+    const atlas = await loadMultiAtlas(filteredSources, {
       showLoadingScreen: false,
     });
 
@@ -280,11 +285,21 @@ async function repack() {
 async function main() {
   statusEl.textContent = "loading...";
 
-  fullAtlasJson = await fetch("../textureAtlas.json").then((r) => r.json());
-  sourceFrames  = fullAtlasJson.frames;
+  const [json1, json2] = await Promise.all([
+    fetch("../textureAtlas.json").then((r) => r.json()),
+    fetch("../textureAtlasDup.json").then((r) => r.json()),
+  ]);
+
+  allSources = [
+    { imageUrl: "../textureAtlas.png",    atlasJson: json1 },
+    { imageUrl: "../textureAtlasDup.png", atlasJson: json2 },
+  ];
+
+  // Merged frames for popup / list rendering.
+  sourceFrames = { ...json1.frames, ...json2.frames };
   enabledSprites = new Set(Object.keys(sourceFrames));
 
-  const atlas = await loadTextureAtlas("../textureAtlas.png", fullAtlasJson, {
+  const atlas = await loadMultiAtlas(allSources, {
     showLoadingScreen: true,
     loadingText: "Packing sprites...",
     onProgress: (loaded, total) => {
@@ -316,6 +331,9 @@ async function main() {
   console.log("[texture-loader] resolveSprite by name:", byName);
   console.log("[texture-loader] resolveSprite by id:  ", byId);
   console.log(`[texture-loader] same sprite? ${byName === byId}`);
+
+  const dupSprite = resolveSprite(atlas, "bat_placeholder1_dup.png");
+  console.log("[texture-loader] resolveSprite (atlas 2):", dupSprite);
 }
 
 main().catch((err) => {

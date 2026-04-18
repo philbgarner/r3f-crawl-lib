@@ -3576,6 +3576,78 @@ void main() {
 		return el;
 	}
 	/**
+	* Load multiple TexturePacker-format sprite atlases, repack all sprites from
+	* every source into a single power-of-two OffscreenCanvas, and return a
+	* PackedAtlas with UV data and name/id lookups.
+	*
+	* Frames from later sources override same-named frames from earlier ones.
+	*
+	* @param sources  Array of { imageUrl, atlasJson } pairs.
+	* @param options  Optional loading screen and progress options.
+	*/
+	async function loadMultiAtlas(sources, options = {}) {
+		const { showLoadingScreen = true, loadingText = "Loading...", container = typeof document !== "undefined" ? document.body : void 0, onProgress } = options;
+		let overlay = null;
+		if (showLoadingScreen && container) overlay = injectOverlay(loadingText, container);
+		try {
+			const total = sources.length + 1;
+			const mergedFrames = {};
+			const frameSourceIdx = {};
+			for (let i = 0; i < sources.length; i++) for (const [name, frame] of Object.entries(sources[i].atlasJson.frames)) {
+				mergedFrames[name] = frame;
+				frameSourceIdx[name] = i;
+			}
+			const { entries, texSize } = computeLayout(mergedFrames);
+			const imageBitmaps = await Promise.all(sources.map(async (s, i) => {
+				const blob = await (await fetch(s.imageUrl)).blob();
+				onProgress?.(i + 1, total);
+				return createImageBitmap(blob);
+			}));
+			let canvas;
+			let ctx;
+			if (typeof OffscreenCanvas !== "undefined") {
+				canvas = new OffscreenCanvas(texSize, texSize);
+				ctx = canvas.getContext("2d");
+			} else {
+				const el = document.createElement("canvas");
+				el.width = texSize;
+				el.height = texSize;
+				canvas = el;
+				ctx = el.getContext("2d");
+			}
+			for (const e of entries) blitSprite(ctx, imageBitmaps[frameSourceIdx[e.name]], e);
+			for (const bmp of imageBitmaps) bmp.close();
+			onProgress?.(total, total);
+			const sprites = /* @__PURE__ */ new Map();
+			const byId = [];
+			entries.forEach((e, idx) => {
+				const sprite = {
+					name: e.name,
+					id: idx,
+					uvX: e.destX / texSize,
+					uvY: e.destY / texSize,
+					uvW: e.outW / texSize,
+					uvH: e.outH / texSize,
+					pivot: e.frame.pivot ?? {
+						x: .5,
+						y: .5
+					},
+					rotation: e.frame.rotation ?? 0
+				};
+				sprites.set(e.name, sprite);
+				byId.push(sprite);
+			});
+			return {
+				texture: canvas,
+				sprites,
+				getByName: (name) => sprites.get(name),
+				getById: (id) => byId[id]
+			};
+		} finally {
+			overlay?.remove();
+		}
+	}
+	/**
 	* Load a TexturePacker-format sprite atlas, repack all sprites into a
 	* power-of-two OffscreenCanvas, and return a PackedAtlas with UV data and
 	* name/id lookups.
@@ -4437,6 +4509,7 @@ void main() {
 	exports.createNpc = createNpc;
 	exports.createWebSocketTransport = createWebSocketTransport;
 	exports.getTheme = getTheme;
+	exports.loadMultiAtlas = loadMultiAtlas;
 	exports.loadTextureAtlas = loadTextureAtlas;
 	exports.loadTiledMap = loadTiledMap;
 	exports.registerTheme = registerTheme;

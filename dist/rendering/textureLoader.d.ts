@@ -81,6 +81,21 @@ export declare function toFaceRotation(rotation: 0 | 90 | 180 | 270): FaceRotati
  * Resolve a sprite from a PackedAtlas by either name or insertion-order id.
  */
 export declare function resolveSprite(atlas: PackedAtlas, nameOrId: string | number): PackedSprite | undefined;
+export type AtlasSource = {
+    imageUrl: string;
+    atlasJson: TextureAtlasJson;
+};
+/**
+ * Load multiple TexturePacker-format sprite atlases, repack all sprites from
+ * every source into a single power-of-two OffscreenCanvas, and return a
+ * PackedAtlas with UV data and name/id lookups.
+ *
+ * Frames from later sources override same-named frames from earlier ones.
+ *
+ * @param sources  Array of { imageUrl, atlasJson } pairs.
+ * @param options  Optional loading screen and progress options.
+ */
+export declare function loadMultiAtlas(sources: AtlasSource[], options?: LoadingOptions): Promise<PackedAtlas>;
 /**
  * Load a TexturePacker-format sprite atlas, repack all sprites into a
  * power-of-two OffscreenCanvas, and return a PackedAtlas with UV data and

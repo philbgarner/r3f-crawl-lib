@@ -217,6 +217,122 @@ function injectOverlay(text: string, container: HTMLElement): HTMLElement {
 // Public API
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Public API — multi-source variant
+// ---------------------------------------------------------------------------
+
+export type AtlasSource = {
+  imageUrl:  string;
+  atlasJson: TextureAtlasJson;
+};
+
+/**
+ * Load multiple TexturePacker-format sprite atlases, repack all sprites from
+ * every source into a single power-of-two OffscreenCanvas, and return a
+ * PackedAtlas with UV data and name/id lookups.
+ *
+ * Frames from later sources override same-named frames from earlier ones.
+ *
+ * @param sources  Array of { imageUrl, atlasJson } pairs.
+ * @param options  Optional loading screen and progress options.
+ */
+export async function loadMultiAtlas(
+  sources: AtlasSource[],
+  options: LoadingOptions = {},
+): Promise<PackedAtlas> {
+  const {
+    showLoadingScreen = true,
+    loadingText       = 'Loading...',
+    container         = typeof document !== 'undefined' ? document.body : undefined,
+    onProgress,
+  } = options;
+
+  let overlay: HTMLElement | null = null;
+  if (showLoadingScreen && container) {
+    overlay = injectOverlay(loadingText, container);
+  }
+
+  try {
+    const total = sources.length + 1;
+
+    // Merge frames and track which source each frame belongs to.
+    const mergedFrames: Record<string, AtlasFrame> = {};
+    const frameSourceIdx: Record<string, number>   = {};
+    for (let i = 0; i < sources.length; i++) {
+      for (const [name, frame] of Object.entries(sources[i]!.atlasJson.frames)) {
+        mergedFrames[name]   = frame;
+        frameSourceIdx[name] = i;
+      }
+    }
+
+    // Compute layout from all merged frames.
+    const { entries, texSize } = computeLayout(mergedFrames);
+
+    // Fetch all source images in parallel.
+    const imageBitmaps = await Promise.all(
+      sources.map(async (s, i) => {
+        const resp = await fetch(s.imageUrl);
+        const blob = await resp.blob();
+        onProgress?.(i + 1, total);
+        return createImageBitmap(blob);
+      }),
+    );
+
+    // Allocate output canvas.
+    let canvas: HTMLCanvasElement | OffscreenCanvas;
+    let ctx: Ctx2D;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      canvas = new OffscreenCanvas(texSize, texSize);
+      ctx    = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    } else {
+      const el  = document.createElement('canvas');
+      el.width  = texSize;
+      el.height = texSize;
+      canvas    = el;
+      ctx       = el.getContext('2d') as CanvasRenderingContext2D;
+    }
+
+    // Blit each sprite from its originating source image.
+    for (const e of entries) {
+      blitSprite(ctx, imageBitmaps[frameSourceIdx[e.name]!]!, e);
+    }
+
+    for (const bmp of imageBitmaps) bmp.close();
+    onProgress?.(total, total);
+
+    // Build PackedAtlas.
+    const sprites = new Map<string, PackedSprite>();
+    const byId: PackedSprite[] = [];
+    entries.forEach((e, idx) => {
+      const sprite: PackedSprite = {
+        name:     e.name,
+        id:       idx,
+        uvX:      e.destX / texSize,
+        uvY:      e.destY / texSize,
+        uvW:      e.outW  / texSize,
+        uvH:      e.outH  / texSize,
+        pivot:    e.frame.pivot ?? { x: 0.5, y: 0.5 },
+        rotation: (e.frame.rotation ?? 0) as 0 | 90 | 180 | 270,
+      };
+      sprites.set(e.name, sprite);
+      byId.push(sprite);
+    });
+
+    return {
+      texture:   canvas,
+      sprites,
+      getByName: (name) => sprites.get(name),
+      getById:   (id)   => byId[id],
+    };
+  } finally {
+    overlay?.remove();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API — single-source (original)
+// ---------------------------------------------------------------------------
+
 /**
  * Load a TexturePacker-format sprite atlas, repack all sprites into a
  * power-of-two OffscreenCanvas, and return a PackedAtlas with UV data and
