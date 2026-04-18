@@ -116,15 +116,21 @@ async function init() {
   renderer = createDungeonRenderer(viewportEl, game, {
     packedAtlas: packed,
     tileNameResolver: resolver,
-    floorTile: "flagstone_floor_stone.png",
-    ceilTile: "plaster_ceiling.png",
-    wallTile: "cobble_wall_stone.png", // corridor base; room walls use brick via a layer
-    ceilSkirtTiles: {
-      north: { tile: "plaster_ceiling.png", rotation: 0 },
-      south: { tile: "plaster_ceiling.png", rotation: 0 },
-      east: { tile: "plaster_ceiling.png", rotation: 1 },
-      west: { tile: "plaster_ceiling.png", rotation: 3 },
+    floorTile: "fancy_tile_floor_stone.png",
+    floorSkirtTiles: {
+      north: { tile: "cobble_wall_stone.png", rotation: 0 },
+      south: { tile: "cobble_wall_stone.png", rotation: 0 },
+      east: { tile: "cobble_wall_stone.png", rotation: 0 },
+      west: { tile: "cobble_wall_stone.png", rotation: 0 },
     },
+    ceilTile: "flagstone_floor_stone.png",
+    ceilSkirtTiles: {
+      north: { tile: "flagstone_floor_stone.png", rotation: 0 },
+      south: { tile: "flagstone_floor_stone.png", rotation: 0 },
+      east: { tile: "flagstone_floor_stone.png", rotation: 1 },
+      west: { tile: "flagstone_floor_stone.png", rotation: 3 },
+    },
+    wallTile: "cobble_wall_stone.png", // corridor base; room walls use brick via a layer
   });
 
   // ── Layers ────────────────────────────────────────────────────────────────
