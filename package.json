@@ -29,6 +29,7 @@
     "ws": "^8.20.0"
   },
   "scripts": {
+    "docs": "typedoc",
     "build": "tsc && vite build",
     "build:server": "vite build --config vite.config.server.ts",
     "build:watch": "tsc --watch",
@@ -54,6 +55,8 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "three": "^0.183.2",
+    "typedoc": "^0.28.19",
+    "typedoc-plugin-markdown": "^4.11.0",
     "typescript": "^5.9.3",
     "vite": "^8.0.1",
     "vite-plugin-dts": "^4.5.4",

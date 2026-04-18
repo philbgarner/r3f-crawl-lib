@@ -1,0 +1,13 @@
+{
+  "entryPoints": ["src/lib/index.ts"],
+  "out": "docs",
+  "plugin": ["typedoc-plugin-markdown"],
+  "readme": "none",
+  "hidePageHeader": true,
+  "hideBreadcrumbs": false,
+  "parametersFormat": "table",
+  "propertiesFormat": "table",
+  "enumMembersFormat": "table",
+  "excludePrivate": true,
+  "excludeInternal": true
+}
