@@ -2934,7 +2934,7 @@ function createBillboard(entity, atlas, atlasColumns, tileSizeNorm, scene) {
 */
 var HALF_PI = Math.PI / 2;
 /** Eye height as a fraction of ceiling height (same as PerspectiveDungeonView). */
-var EYE_HEIGHT_FACTOR = .4;
+var EYE_HEIGHT_FACTOR = .66;
 function makeFaceMatrix(x, y, z, rx, ry, rz, w, h) {
 	return new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(w, h, 1));
 }
