@@ -13,7 +13,8 @@ npm version "$TAG" --no-git-tag-version
 npm run build
 npm run build:server
 
-git add package.json package-lock.json dist/
+git add package.json package-lock.json
+git add -f dist/
 git commit -m "build: $TAG"
 
 git tag "$TAG"
