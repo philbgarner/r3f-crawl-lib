@@ -23,8 +23,10 @@ const popupClose   = document.getElementById("json-popup-close");
 const popupSprite  = document.getElementById("json-popup-sprite");
 
 const ctx = outputCanvas.getContext("2d");
+const overlayCb   = document.getElementById("overlay-cb");
 
 let currentAtlas  = null;
+let showOverlay   = false;
 let sourceFrames  = null;   // original full frames for JSON popup
 let fullAtlasJson = null;
 let enabledSprites = new Set();
@@ -51,32 +53,34 @@ function renderCanvas(atlas) {
     ctx.drawImage(src, 0, 0);
   }
 
-  ctx.save();
-  ctx.strokeStyle = "rgba(255, 0, 255, 0.75)";
-  ctx.lineWidth   = 1;
-  ctx.setLineDash([3, 3]);
-
-  for (const sprite of atlas.sprites.values()) {
-    const px = sprite.uvX * w;
-    const py = sprite.uvY * h;
-    const pw = sprite.uvW * w;
-    const ph = sprite.uvH * h;
-    ctx.strokeRect(px, py, pw, ph);
-
-    const label    = `${Math.round(pw)}×${Math.round(ph)}`;
-    const fontSize = Math.max(7, Math.min(11, pw / 6));
-    ctx.setLineDash([]);
-    ctx.font         = `bold ${fontSize}px monospace`;
-    ctx.textAlign    = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle    = "rgba(0,0,0,0.6)";
-    ctx.fillText(label, px + pw / 2 + 1, py + ph / 2 + 1);
-    ctx.fillStyle    = "rgba(255,255,0,0.9)";
-    ctx.fillText(label, px + pw / 2, py + ph / 2);
+  if (showOverlay) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 0, 255, 0.75)";
+    ctx.lineWidth   = 1;
     ctx.setLineDash([3, 3]);
-  }
 
-  ctx.restore();
+    for (const sprite of atlas.sprites.values()) {
+      const px = sprite.uvX * w;
+      const py = sprite.uvY * h;
+      const pw = sprite.uvW * w;
+      const ph = sprite.uvH * h;
+      ctx.strokeRect(px, py, pw, ph);
+
+      const label    = `${Math.round(pw)}×${Math.round(ph)}`;
+      const fontSize = Math.max(7, Math.min(11, pw / 6));
+      ctx.setLineDash([]);
+      ctx.font         = `bold ${fontSize}px monospace`;
+      ctx.textAlign    = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle    = "rgba(0,0,0,0.6)";
+      ctx.fillText(label, px + pw / 2 + 1, py + ph / 2 + 1);
+      ctx.fillStyle    = "rgba(255,255,0,0.9)";
+      ctx.fillText(label, px + pw / 2, py + ph / 2);
+      ctx.setLineDash([3, 3]);
+    }
+
+    ctx.restore();
+  }
 
   baseImageData = ctx.getImageData(0, 0, w, h);
 }
@@ -211,6 +215,11 @@ toggleAllBtn.addEventListener("click", () => {
 
 popupClose.addEventListener("click", () => { popup.style.display = "none"; });
 popup.addEventListener("click", (e) => { if (e.target === popup) popup.style.display = "none"; });
+
+overlayCb.addEventListener("change", () => {
+  showOverlay = overlayCb.checked;
+  if (currentAtlas) repack();
+});
 
 // ---------------------------------------------------------------------------
 // Repacking
