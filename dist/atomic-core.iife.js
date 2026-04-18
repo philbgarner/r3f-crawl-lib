@@ -3967,6 +3967,13 @@ void main() {
 					meta
 				}));
 			},
+			sendMonsterState(monsters) {
+				if (!ws || !_playerId) return;
+				ws.send(JSON.stringify({
+					type: "monster_state",
+					monsters
+				}));
+			},
 			onChat(handler) {
 				chatHandlers.push(handler);
 			},

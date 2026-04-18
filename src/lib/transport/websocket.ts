@@ -21,6 +21,7 @@ import type {
   ActionTransport,
   ServerStateUpdate,
   DungeonInitPayload,
+  MonsterNetState,
 } from './types';
 import type { TurnAction } from '../turn/types';
 
@@ -127,6 +128,11 @@ export function createWebSocketTransport(url: string): ActionTransport {
     sendMeta(meta: Record<string, unknown>) {
       if (!ws || !_playerId) return;
       ws.send(JSON.stringify({ type: 'player_meta', meta }));
+    },
+
+    sendMonsterState(monsters: MonsterNetState[]) {
+      if (!ws || !_playerId) return;
+      ws.send(JSON.stringify({ type: 'monster_state', monsters }));
     },
 
     onChat(handler: (msg: { playerId: string; text: string }) => void) {

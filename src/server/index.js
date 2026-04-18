@@ -61,6 +61,7 @@ const PORT = Number(process.env.PORT ?? 3001)
  *   spawnX: number,
  *   spawnY: number,
  *   turn: number,
+ *   monsters: object[],
  * }} Room
  */
 
@@ -78,6 +79,7 @@ function getOrCreateRoom(roomId) {
       spawnX: 1,
       spawnY: 1,
       turn: 0,
+      monsters: [],
     })
   }
   return rooms.get(roomId)
@@ -131,7 +133,7 @@ function stateSnapshot(room) {
   for (const [id, p] of room.players) {
     players[id] = { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, alive: p.alive, facing: p.facing, meta: p.meta }
   }
-  return JSON.stringify({ type: 'state', players, turn: room.turn })
+  return JSON.stringify({ type: 'state', players, turn: room.turn, monsters: room.monsters })
 }
 
 function broadcast(room, msg, excludeWs = null) {
@@ -316,6 +318,17 @@ wss.on('connection', (ws) => {
       if (!player) return
       if (msg.meta && typeof msg.meta === 'object') {
         player.meta = { ...player.meta, ...msg.meta }
+        broadcastAll(room, stateSnapshot(room))
+      }
+    }
+
+    // ── monster_state ──────────────────────────────────────────────────────
+    if (msg.type === 'monster_state') {
+      // Only the host (first player) is trusted to supply authoritative monster state.
+      const firstPlayerId = room.players.keys().next().value
+      if (playerId !== firstPlayerId) return
+      if (Array.isArray(msg.monsters)) {
+        room.monsters = msg.monsters
         broadcastAll(room, stateSnapshot(room))
       }
     }

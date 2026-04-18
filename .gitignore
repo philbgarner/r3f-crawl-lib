@@ -3,4 +3,4 @@ CLAUDE.md
 node_modules
 .workspace
 archive/*
-dist
+#dist # Turns out the github build pipeline does rely on this.

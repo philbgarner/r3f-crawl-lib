@@ -31,11 +31,33 @@ export type PlayerNetState = {
   meta?: Record<string, unknown>;
 };
 
+/** Minimal monster state needed to render enemies on non-host clients. */
+export type MonsterNetState = {
+  id: string;
+  kind: 'enemy';
+  type: string;
+  sprite: string | number;
+  x: number;
+  z: number;
+  hp: number;
+  maxHp: number;
+  alive: boolean;
+  attack: number;
+  defense: number;
+  speed: number;
+  blocksMove: boolean;
+  faction: string;
+  tick: number;
+  spriteMap?: unknown;
+};
+
 /** Broadcast by the server after every accepted action. */
 export type ServerStateUpdate = {
   /** Canonical state for every connected player. */
   players: Record<string, PlayerNetState>;
   turn: number;
+  /** Current monster positions/state, supplied by the host. */
+  monsters?: MonsterNetState[];
 };
 
 /** Sent by the host client after generate() so the server can validate moves. */
@@ -102,6 +124,13 @@ export type ActionTransport = {
    * clients need to know but that the server doesn't act on.
    */
   sendMeta(meta: Record<string, unknown>): void;
+
+  /**
+   * Send the current monster state to the server so it can be broadcast to
+   * all connected clients. Should be called by the host after generate() and
+   * after every turn in which monsters move or change state.
+   */
+  sendMonsterState(monsters: MonsterNetState[]): void;
 
   /**
    * Register a handler that fires whenever a chat message is received.
