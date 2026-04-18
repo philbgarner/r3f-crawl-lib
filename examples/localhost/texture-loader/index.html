@@ -6,6 +6,10 @@
         <title>atomic-core — Texture Loader</title>
         <link rel="stylesheet" href="../basic/styles.css" />
         <style>
+            #sidebar {
+                overflow: hidden;
+            }
+
             #sidebar h2 {
                 font-size: 7px;
                 color: var(--gold-dim);
@@ -13,15 +17,67 @@
                 margin-top: 8px;
                 border-bottom: 1px solid var(--border);
                 padding-bottom: 6px;
+                flex-shrink: 0;
             }
+
             #sprite-list {
-                font-size: 7px;
-                line-height: 2;
-                color: var(--desc);
-                max-height: 320px;
+                flex: 1;
+                min-height: 0;
                 overflow-y: auto;
+                font-size: 7px;
+                line-height: 1.5;
+                color: var(--desc);
             }
-            #sprite-list span { color: var(--gold); }
+
+            .sprite-row {
+                display: flex;
+                align-items: flex-start;
+                gap: 5px;
+                padding: 4px 2px;
+                border-bottom: 1px solid #1a1a3a;
+            }
+
+            .sprite-row:hover {
+                background: rgba(48, 64, 128, 0.25);
+            }
+
+            .sprite-row.sprite-disabled {
+                opacity: 0.38;
+            }
+
+            .sprite-row input[type="checkbox"] {
+                margin-top: 2px;
+                flex-shrink: 0;
+                accent-color: var(--gold);
+                cursor: pointer;
+            }
+
+            .sprite-info {
+                flex: 1;
+                min-width: 0;
+                word-break: break-all;
+            }
+
+            .sprite-name { color: var(--gold); }
+
+            .ellipsis-btn {
+                flex-shrink: 0;
+                background: transparent;
+                border: 1px solid var(--border);
+                color: var(--desc);
+                font-family: monospace;
+                font-size: 10px;
+                padding: 0 5px;
+                cursor: pointer;
+                line-height: 1.4;
+                align-self: center;
+            }
+
+            .ellipsis-btn:hover {
+                background: var(--border);
+                color: var(--gold);
+            }
+
             #packed-canvas {
                 display: block;
                 max-width: 100%;
@@ -29,17 +85,81 @@
                 border: 1px solid var(--border);
                 margin-top: 8px;
             }
+
             #canvas-wrap {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 gap: 8px;
                 padding: 16px;
+                overflow: auto;
             }
+
             #canvas-title {
                 font-size: 8px;
                 color: var(--gold-dim);
                 letter-spacing: 0.1em;
+            }
+
+            /* JSON popup */
+            #json-popup {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.72);
+                z-index: 1000;
+                align-items: center;
+                justify-content: center;
+            }
+
+            #json-popup-inner {
+                background: var(--panel);
+                border: 2px solid var(--border);
+                box-shadow: 0 0 32px rgba(48,64,128,0.6);
+                padding: 16px;
+                max-width: 500px;
+                width: 90%;
+                max-height: 72vh;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            #json-popup-title {
+                font-size: 8px;
+                color: var(--gold);
+                letter-spacing: 0.08em;
+                word-break: break-all;
+            }
+
+            #json-popup-body {
+                flex: 1;
+                overflow-y: auto;
+                font-family: monospace;
+                font-size: 10px;
+                color: var(--text);
+                white-space: pre;
+                background: rgba(0,0,0,0.35);
+                padding: 10px;
+                border: 1px solid var(--border);
+                line-height: 1.6;
+            }
+
+            #json-popup-close {
+                align-self: flex-end;
+                background: transparent;
+                border: 1px solid var(--border);
+                color: var(--desc);
+                font-family: 'Press Start 2P', monospace;
+                font-size: 8px;
+                padding: 5px 10px;
+                cursor: pointer;
+                letter-spacing: 0.08em;
+            }
+
+            #json-popup-close:hover {
+                background: var(--border);
+                color: var(--gold);
             }
         </style>
     </head>
@@ -53,18 +173,34 @@
                 Status: <span id="status">loading...</span>
             </div>
 
-            <h2>Packed Sprites (first 20)</h2>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Packed Sprites</span>
+                <button id="toggle-all-btn" style="font-family:monospace;font-size:7px;padding:1px 5px;background:transparent;border:1px solid var(--border);color:var(--desc);cursor:pointer;letter-spacing:0.05em;">none</button>
+            </h2>
             <div id="sprite-list"></div>
 
             <div id="controls">
                 Fetches textureAtlas.json + .png<br />
                 via loadTextureAtlas()
             </div>
+
+            <button id="download-btn" disabled style="margin-top:12px;width:100%;padding:6px 0;font-family:monospace;font-size:9px;letter-spacing:0.08em;cursor:pointer;opacity:0.4;">
+                Download PNG
+            </button>
         </div>
 
         <div id="canvas-wrap">
             <div id="canvas-title">Baked Packed Texture</div>
             <canvas id="packed-canvas"></canvas>
+        </div>
+
+        <!-- JSON source popup -->
+        <div id="json-popup">
+            <div id="json-popup-inner">
+                <div id="json-popup-title"></div>
+                <pre id="json-popup-body"></pre>
+                <button id="json-popup-close">Close</button>
+            </div>
         </div>
 
         <script type="module">
