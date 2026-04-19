@@ -110,7 +110,7 @@ Camera-facing billboard quads driven by a multi-layer sprite system. Actors decl
 ### First-person 3D dungeon rendering with lighting and fog
 
 **Files:**
-- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; `floorTile`/`ceilTile`/`wallTile` options accept `string | number` resolved via `tileNameResolver`; `LayerFaceResult.tile` is `string | number`; per-direction tile specs via `wallTiles`, `floorSkirtTiles`, `ceilSkirtTiles` options; public `addLayer(spec)` API for stacking additional instanced meshes on floors, ceilings, walls, or skirts with per-face filtering and deferred application; uses `basicLighting.ts` shaders; routes entities with `spriteMap` to `billboardSprites.ts` (passing resolver); exports `LayerTarget`, `LayerFaceResult`, `LayerSpec`, `LayerHandle`, `SpriteMap`
+- `rendering/dungeonRenderer.ts` — main Three.js scene, render loop, shader uniforms; `floorTile`/`ceilTile`/`wallTile` options accept `string | number` resolved via `tileNameResolver`; `LayerFaceResult.tile` is `string | number`; per-direction tile specs via `wallTiles`, `floorSkirtTiles`, `ceilSkirtTiles` options; public `addLayer(spec)` API for stacking additional instanced meshes on floors, ceilings, walls, or skirts with per-face filtering and deferred application; public `worldToScreen(gridX, gridZ, worldY?)` projects a grid cell to pixel coords relative to the container element (returns `null` when behind the camera or out of bounds); uses `basicLighting.ts` shaders; routes entities with `spriteMap` to `billboardSprites.ts` (passing resolver); exports `LayerTarget`, `LayerFaceResult`, `LayerSpec`, `LayerHandle`, `SpriteMap`
 - `rendering/billboardSprites.ts` — see "Billboarded sprite rendering" feature entry above
 - `rendering/basicLighting.ts` — minimal atlas and object shaders: texture sampling + linear fog; `aUvRotation` rotates UVs in 90° steps (0–3); `aUvHeightScale` clips UVs to the top fraction of a tile (top-aligned) so partial-height skirt panels keep brick aspect ratio; no torch flicker or tint bands; used by `dungeonRenderer.ts`
 - `rendering/torchLighting.ts` — torch color, intensity, banding constants, and flickering GLSL chunks; available for custom renderers that want animated torch lighting
@@ -300,15 +300,15 @@ Evaluator-driven mission system that hooks into the turn loop. The developer reg
 
 ### Multiplayer action transport (optional middleware)
 
-Dependency-injection layer that makes the server authoritative for all player actions. When `GameOptions.transport` is set, `game.turns.commit()` forwards actions to the server instead of applying them locally; the server validates each action, updates canonical state, and broadcasts a `ServerStateUpdate` to all connected clients. `createGame` registers a reconciliation handler on the transport that patches the local turn state and re-emits the `"turn"` event automatically. Single-player code paths are completely unaffected — zero overhead when no transport is provided.
+Dependency-injection layer that makes the server authoritative for all player actions and monster AI. When `GameOptions.transport` is set, `game.turns.commit()` forwards actions to the server instead of applying them locally; the server validates each action, runs monster AI (chase + 4-directional movement + melee combat), updates canonical state, and broadcasts a `ServerStateUpdate` to all connected clients. `createGame` registers a reconciliation handler that patches local turn state, auto-registers monster entities in `entityById` for non-host clients, and re-emits the `"turn"` event. Initial state messages buffered during `connect()` are replayed when the first `onStateUpdate` handler registers so late-joining clients see current monster positions immediately. Single-player code paths are completely unaffected.
 
 **Files:**
 - `transport/types.ts` — `ActionTransport` interface, `ServerStateUpdate`, `PlayerNetState`, `DungeonInitPayload`
-- `transport/websocket.ts` — `createWebSocketTransport(url)` browser-side factory
-- `api/createGame.ts` — `GameOptions.transport`, `PlayerOptions.id`, commit intercept, reconciliation wiring
+- `transport/websocket.ts` — `createWebSocketTransport(url)` browser-side factory; buffers `state` messages before `onStateUpdate` is registered and replays them on first handler registration
+- `api/createGame.ts` — `GameOptions.transport`, `PlayerOptions.id`, commit intercept, reconciliation wiring; auto-registers and syncs monster entities from state updates
 
 **Server:**
-- `src/server/index.js` — Express + `ws` authoritative server; generates the dungeon server-side from the host's config so the solid map and spawn position are authoritative; validates moves; broadcasts state to all room peers; serves the multiplayer example and static assets on a single port
+- `src/server/index.js` — Express + `ws` authoritative server; generates the dungeon server-side; validates player moves (including monster-blocking); resolves player→monster and monster→player melee combat; runs `runMonsterAI()` (4-directional chase, one step per player action) after each accepted action; broadcasts full state to all peers
 - `src/server/dungeon-entry.ts` — thin build entry that re-exports `generateBspDungeon` for the server build
 - `src/server/three-shim.js` — minimal `THREE.DataTexture` shim so `bsp.ts` runs in Node without a real GPU or browser context; only `image.data` is needed server-side
 - `vite.config.server.ts` — separate Vite config that compiles the server dungeon module with `three` aliased to the shim; outputs `dist/server/dungeon.js`

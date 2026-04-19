@@ -116,7 +116,7 @@ connectBtn.addEventListener("click", async () => {
 
   let info;
   try {
-    info = await transport.connect({ sprite: chosenSprite });
+    info = await transport.connect({ sprite: chosenSprite, attack: 5, defense: 2, maxHp: 30 });
   } catch (err) {
     connectError.textContent = "Could not connect: " + (err?.message ?? err);
     connectError.style.display = "block";
@@ -246,6 +246,44 @@ async function startGame(
     transport,
   });
 
+  // ── Turn-animation callback system ──────────────────────────────────────
+  //
+  // Handlers fire between turn resolution and entity-position sync, so
+  // entities are still at their pre-move positions when tweens/floats run.
+
+  const canvasWrapEl = document.getElementById("canvas-wrap");
+
+  function showFloatText(text, color, gridX, gridZ) {
+    const el = document.createElement("div");
+    el.className = "anim-float";
+    el.style.color = color;
+    const pos = renderer?.worldToScreen(gridX, gridZ);
+    el.style.left = (pos ? pos.x : canvasWrapEl.clientWidth * 0.5) + "px";
+    el.style.top  = (pos ? pos.y : canvasWrapEl.clientHeight * 0.4) + "px";
+    el.textContent = text;
+    canvasWrapEl.appendChild(el);
+    el.addEventListener("animationend", () => el.remove(), { once: true });
+  }
+
+  // All combat is server-authoritative, so onDamage/onDeath callbacks never
+  // fire in multiplayer. Log and animate from the animation diff events instead.
+  game.animations.on("damage", async ({ entity, amount }) => {
+    addLog(`${entity.type} takes ${amount} dmg`, "damage");
+    showFloatText(`-${amount}`, "#f66", entity.x, entity.z);
+    await new Promise((r) => setTimeout(r, 450));
+  });
+
+  game.animations.on("death", async ({ entity }) => {
+    addLog(`${entity.type} is slain!`, "death");
+    showFloatText("DEAD", "#f99", entity.x, entity.z);
+    await new Promise((r) => setTimeout(r, 500));
+  });
+
+  game.animations.on("miss", async ({ entity }) => {
+    showFloatText("MISS", "#8090c0", entity.x, entity.z);
+    await new Promise((r) => setTimeout(r, 300));
+  });
+
   // ── Minimap ──────────────────────────────────────────────────────────────
 
   attachMinimap(game, minimapCanvas, {
@@ -299,6 +337,7 @@ async function startGame(
           speed: 6,
           danger: 1,
           xp: 10,
+          faction: "enemy",
           spriteMap: {
             frameSize: { w: 64, h: 64 },
             layers: [
@@ -350,8 +389,6 @@ async function startGame(
     hpEl.textContent = `${game.player.hp} / ${game.player.maxHp}`;
     posEl.textContent = `${game.player.x}, ${game.player.z}`;
     if (renderer) renderer.setEntities([...enemies, ...otherPlayerEntities]);
-    // Sync monster state to server so connected clients stay up to date.
-    if (isHost) transport.sendMonsterState(enemies.map(monsterNetState));
   });
 
   // 'network-state' fires whenever the server pushes a state update —
@@ -383,8 +420,8 @@ async function startGame(
         spriteMap: spriteForPlayer(ps),
       }));
 
-    // Non-host clients have no local enemy simulation — populate from server.
-    if (!isHost && Array.isArray(update.monsters)) {
+    // Server is authoritative for monster positions — sync all clients.
+    if (Array.isArray(update.monsters)) {
       enemies.length = 0;
       enemies.push(...update.monsters);
     }

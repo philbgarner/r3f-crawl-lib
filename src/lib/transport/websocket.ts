@@ -37,6 +37,11 @@ export function createWebSocketTransport(url: string): ActionTransport {
   const updateHandlers: Array<(update: ServerStateUpdate) => void> = [];
   const chatHandlers: Array<(msg: { playerId: string; text: string }) => void> = [];
   const missionCompleteHandlers: Array<(msg: { playerId: string; missionId: string; name: string }) => void> = [];
+  // State messages that arrive before any onStateUpdate handler is registered
+  // (e.g. the server's initial broadcast during connect()) are buffered and
+  // replayed when the first handler registers so non-host clients receive the
+  // current dungeon + monster state without waiting for the next player action.
+  const bufferedUpdates: Array<ServerStateUpdate & { type: string }> = [];
 
   function dispatch(raw: string): void {
     let msg: Record<string, unknown>;
@@ -48,7 +53,11 @@ export function createWebSocketTransport(url: string): ActionTransport {
 
     if (msg.type === 'state') {
       const update = msg as unknown as ServerStateUpdate & { type: string };
-      for (const h of updateHandlers) h(update);
+      if (updateHandlers.length > 0) {
+        for (const h of updateHandlers) h(update);
+      } else {
+        bufferedUpdates.push(update);
+      }
     }
 
     if (msg.type === 'chat') {
@@ -114,6 +123,9 @@ export function createWebSocketTransport(url: string): ActionTransport {
 
     onStateUpdate(handler: (update: ServerStateUpdate) => void) {
       updateHandlers.push(handler);
+      // Replay any state messages that arrived before this handler registered.
+      for (const u of bufferedUpdates) handler(u);
+      bufferedUpdates.length = 0;
     },
 
     initDungeon(payload: DungeonInitPayload) {

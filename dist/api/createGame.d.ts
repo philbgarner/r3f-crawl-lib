@@ -10,6 +10,7 @@ import { PlayerHandle } from './player';
 import { KeybindingsOptions } from './keybindings';
 import { ActionTransport } from '../transport/types';
 import { MissionsHandle } from '../missions/types';
+import { AnimationsHandle } from '../animations/types';
 export type PublicRoom = {
     id: number;
     type: "room" | "corridor";
@@ -45,8 +46,13 @@ export type DungeonHandle = {
 export type TurnsHandle = {
     /** Current turn counter. */
     readonly turn: number;
-    /** Commit a player action and run all other actors until the player's next turn. */
-    commit(action: TurnAction): void;
+    /**
+     * Commit a player action and run all other actors until the player's next turn.
+     * Resolves after all registered animation handlers have completed.
+     * In multiplayer mode resolves immediately after the action is forwarded to
+     * the server; animation handlers fire from the onStateUpdate reconciliation path.
+     */
+    commit(action: TurnAction): Promise<void>;
     addActor(entity: EntityBase): void;
     removeActor(id: string): void;
 };
@@ -165,6 +171,12 @@ export type GameHandle = {
     combat: CombatHandle;
     /** Mission/quest system. Add evaluator-driven missions that auto-complete each turn. */
     missions: MissionsHandle;
+    /**
+     * Register async animation handlers that fire after each turn, before entity
+     * positions are synced to the render layer. Works in both single-player and
+     * multiplayer (multiplayer events are reconstructed from state diffs).
+     */
+    animations: AnimationsHandle;
     /** Generate the dungeon and start the game. Call after attaching all callbacks. */
     generate(): void;
     /**

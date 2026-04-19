@@ -209,6 +209,45 @@ const game = createGame(document.body, {
 });
 
 // ---------------------------------------------------------------------------
+// Turn-animation callback system
+//
+// game.animations.on() registers async handlers that fire between turn
+// resolution and entity-position sync. Entities are still at their
+// pre-move positions when these run, so tweens/floats land correctly.
+// ---------------------------------------------------------------------------
+
+const canvasWrapEl = document.getElementById("canvas-wrap");
+
+function showFloatText(text, color, gridX, gridZ) {
+  const el = document.createElement("div");
+  el.className = "anim-float";
+  el.style.color = color;
+  // Position at entity's screen location when the renderer is ready, or fall
+  // back to the viewport centre so the text is never invisible.
+  const pos = renderer?.worldToScreen(gridX, gridZ);
+  el.style.left = (pos ? pos.x : canvasWrapEl.clientWidth * 0.5) + "px";
+  el.style.top  = (pos ? pos.y : canvasWrapEl.clientHeight * 0.4) + "px";
+  el.textContent = text;
+  canvasWrapEl.appendChild(el);
+  el.addEventListener("animationend", () => el.remove(), { once: true });
+}
+
+game.animations.on("damage", async ({ entity, amount }) => {
+  showFloatText(`-${amount}`, "#f66", entity.x, entity.z);
+  await new Promise((r) => setTimeout(r, 450));
+});
+
+game.animations.on("death", async ({ entity }) => {
+  showFloatText("DEAD", "#f99", entity.x, entity.z);
+  await new Promise((r) => setTimeout(r, 500));
+});
+
+game.animations.on("miss", async ({ entity }) => {
+  showFloatText("MISS", "#8090c0", entity.x, entity.z);
+  await new Promise((r) => setTimeout(r, 300));
+});
+
+// ---------------------------------------------------------------------------
 // Minimap — 2D canvas overlay; redraws on every turn event
 // ---------------------------------------------------------------------------
 

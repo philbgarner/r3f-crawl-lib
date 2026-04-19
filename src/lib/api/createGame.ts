@@ -1252,35 +1252,70 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
           }
         }
 
-        // Diff monster states (if the server includes them).
+        // Diff monster states — auto-register entities for non-host clients
+        // who never call addActor() and so have empty entityById/actors maps.
         if (update.monsters) {
           for (const mn of update.monsters) {
+            // Register on first sight so animations work on all clients.
+            let entity = internal.entityById.get(mn.id);
+            if (!entity) {
+              entity = {
+                id: mn.id, kind: 'enemy', type: mn.type,
+                sprite: mn.sprite as string | number,
+                x: mn.x, z: mn.z, hp: mn.hp, maxHp: mn.maxHp, alive: mn.alive,
+                attack: mn.attack, defense: mn.defense, speed: mn.speed,
+                blocksMove: mn.blocksMove, faction: mn.faction, tick: mn.tick,
+              };
+              if (mn.spriteMap) (entity as Record<string, unknown>).spriteMap = mn.spriteMap;
+              internal.entityById.set(mn.id, entity);
+            }
+
             const old = oldActors[mn.id];
-            if (!old) continue;
-            const entity = internal.entityById.get(mn.id);
-            if (!entity) continue;
-            if (old.x !== mn.x || old.y !== mn.z) {
-              internal.animationRegistry._enqueue({
-                kind: 'move', entity,
-                from: { x: old.x, z: old.y },
-                to:   { x: mn.x, z: mn.z },
-              });
+            if (old) {
+              if (old.x !== mn.x || old.y !== mn.z) {
+                internal.animationRegistry._enqueue({
+                  kind: 'move', entity,
+                  from: { x: old.x, z: old.y },
+                  to:   { x: mn.x, z: mn.z },
+                });
+              }
+              if (mn.hp < (old as { hp: number }).hp) {
+                internal.animationRegistry._enqueue({ kind: 'damage', entity, amount: (old as { hp: number }).hp - mn.hp });
+              }
+              if (old.alive && !mn.alive) {
+                internal.animationRegistry._enqueue({ kind: 'death', entity });
+              }
             }
-            if (mn.hp < old.hp) {
-              internal.animationRegistry._enqueue({ kind: 'damage', entity, amount: old.hp - mn.hp });
-            }
-            if (old.alive && !mn.alive) {
-              internal.animationRegistry._enqueue({ kind: 'death', entity });
-            }
+
+            // Keep entity fields current so animation positions are correct.
+            entity.x = mn.x;
+            entity.z = mn.z;
+            entity.hp = mn.hp;
+            entity.alive = mn.alive;
           }
         }
 
-        // Patch actor state.
+        // Patch actor state — players then monsters.
         let actors = { ...oldActors };
         for (const [pid, ps] of Object.entries(update.players)) {
           const actor = actors[pid];
           if (actor) {
             actors[pid] = { ...actor, x: ps.x, y: ps.y, hp: ps.hp, alive: ps.alive };
+          }
+        }
+        for (const mn of (update.monsters ?? [])) {
+          const existing = actors[mn.id] as MonsterActor | undefined;
+          if (existing) {
+            actors[mn.id] = { ...existing, x: mn.x, y: mn.z, hp: mn.hp, alive: mn.alive };
+          } else {
+            actors[mn.id] = {
+              id: mn.id, kind: 'monster', name: mn.type, glyph: mn.type[0] ?? '?',
+              x: mn.x, y: mn.z, speed: mn.speed, alive: mn.alive,
+              blocksMovement: mn.blocksMove,
+              hp: mn.hp, maxHp: mn.maxHp, attack: mn.attack, defense: mn.defense,
+              xp: 0, danger: 1, alertState: 'idle', rpsEffect: 'none',
+              searchTurnsLeft: 0, lastKnownPlayerPos: null,
+            } as MonsterActor;
           }
         }
         internal.turnState = {

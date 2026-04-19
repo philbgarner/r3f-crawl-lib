@@ -180,6 +180,18 @@ export type DungeonRenderer = {
    */
   setEntities(entities: EntityBase[]): void;
   /**
+   * Project a dungeon grid cell to 2D pixel coordinates relative to the
+   * renderer's container element, using the current camera state.
+   *
+   * Returns `{ x, y }` in pixels (suitable for `left`/`top` on an absolutely-
+   * positioned child of the container), or `null` when the point is behind
+   * the camera or outside the viewport.
+   *
+   * `worldY` is the vertical world-space position to project; defaults to
+   * mid-entity height (~40% of ceiling height).
+   */
+  worldToScreen(gridX: number, gridZ: number, worldY?: number): { x: number; y: number } | null;
+  /**
    * Add an instanced geometry layer on top of existing walls, ceilings, or
    * floors.  May be called before or after the dungeon is generated; layers
    * added before generation are deferred and applied automatically.
@@ -1175,6 +1187,19 @@ export function createDungeonRenderer(
     setEntities(entities) {
       currentEntities = entities;
       syncEntities(entities);
+    },
+    worldToScreen(gridX, gridZ, worldY) {
+      const wx = (gridX + 0.5) * tileSize;
+      const wy = worldY ?? ceilingH * 0.4;
+      const wz = (gridZ + 0.5) * tileSize;
+      const v = new THREE.Vector3(wx, wy, wz).project(camera);
+      if (v.z > 1) return null;
+      const w = element.clientWidth || 1;
+      const h = element.clientHeight || 1;
+      const sx = (v.x * 0.5 + 0.5) * w;
+      const sy = (-v.y * 0.5 + 0.5) * h;
+      if (sx < 0 || sx > w || sy < 0 || sy > h) return null;
+      return { x: sx, y: sy };
     },
     createAtlasMaterial() {
       return packedAtlas ? makeAtlasMaterial() : null;

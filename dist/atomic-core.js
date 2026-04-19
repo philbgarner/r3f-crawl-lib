@@ -1832,6 +1832,38 @@ function createMissionSystem(events, transport) {
 	};
 }
 //#endregion
+//#region src/lib/animations/animationRegistry.ts
+function createAnimationRegistry() {
+	const handlers = /* @__PURE__ */ new Map();
+	const queue = [];
+	return {
+		on(kind, handler) {
+			if (!handlers.has(kind)) handlers.set(kind, []);
+			handlers.get(kind).push(handler);
+		},
+		off(kind, handler) {
+			const list = handlers.get(kind);
+			if (!list) return;
+			const idx = list.indexOf(handler);
+			if (idx !== -1) list.splice(idx, 1);
+		},
+		clear(kind) {
+			handlers.delete(kind);
+		},
+		_enqueue(entry) {
+			queue.push(entry);
+		},
+		async _flush() {
+			const pending = queue.splice(0);
+			for (const entry of pending) {
+				const list = handlers.get(entry.kind);
+				if (!list || list.length === 0) continue;
+				for (const handler of list) await handler(entry);
+			}
+		}
+	};
+}
+//#endregion
 //#region src/lib/api/createGame.ts
 function toPublicRoom(id, info) {
 	return {
@@ -1894,7 +1926,7 @@ function entityToMonsterActor(e) {
 		lastKnownPlayerPos: null
 	};
 }
-function makeApplyAction(internal, combatOpts) {
+function makeApplyAction(internal, combatOpts, onAnimEvent) {
 	return function customApplyAction(state, actorId, action, deps) {
 		if (action.kind === "interact" && action.meta?.rotate !== void 0) {
 			if (actorId === internal.playerActorId) internal.playerState.facing = ((internal.playerState.facing + action.meta.rotate) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
@@ -1956,23 +1988,46 @@ function makeApplyAction(internal, combatOpts) {
 				if (result.outcome === "hit") {
 					defenderEntity.hp = Math.max(0, defenderEntity.hp - result.damage);
 					if (result.defenderDied) defenderEntity.alive = false;
+					onAnimEvent?.({
+						kind: "attack",
+						entity: attackerEntity,
+						actor: defenderEntity
+					});
+					onAnimEvent?.({
+						kind: "damage",
+						entity: defenderEntity,
+						actor: attackerEntity,
+						amount: result.damage
+					});
 					combatOpts?.onDamage?.({
 						attacker: attackerEntity,
 						defender: defenderEntity,
 						amount: result.damage
 					});
 					if (result.defenderDied) {
+						onAnimEvent?.({
+							kind: "death",
+							entity: defenderEntity,
+							actor: attackerEntity
+						});
 						combatOpts?.onDeath?.({
 							entity: defenderEntity,
 							killer: attackerEntity
 						});
 						if (actorId === internal.playerActorId) {
 							const xp = defenderEntity.xp ?? 0;
-							if (xp > 0) internal.events.emit("xp-gain", {
-								amount: xp,
-								x: defenderEntity.x,
-								z: defenderEntity.z
-							});
+							if (xp > 0) {
+								onAnimEvent?.({
+									kind: "xp-gain",
+									entity: attackerEntity,
+									amount: xp
+								});
+								internal.events.emit("xp-gain", {
+									amount: xp,
+									x: defenderEntity.x,
+									z: defenderEntity.z
+								});
+							}
 							internal.events.emit("audio", {
 								name: "xp-pickup",
 								position: [defenderEntity.x, defenderEntity.z]
@@ -1991,10 +2046,17 @@ function makeApplyAction(internal, combatOpts) {
 							[targetActor.id]: updatedDefender
 						}
 					};
-				} else if (result.outcome === "miss") combatOpts?.onMiss?.({
-					attacker: attackerEntity,
-					defender: defenderEntity
-				});
+				} else if (result.outcome === "miss") {
+					onAnimEvent?.({
+						kind: "miss",
+						entity: defenderEntity,
+						actor: attackerEntity
+					});
+					combatOpts?.onMiss?.({
+						attacker: attackerEntity,
+						defender: defenderEntity
+					});
+				}
 			}
 			return state;
 		}
@@ -2004,6 +2066,19 @@ function makeApplyAction(internal, combatOpts) {
 		if (actorId === internal.playerActorId) internal.events.emit("audio", {
 			name: "footstep",
 			position: [nx, ny]
+		});
+		const movingEntity = internal.entityById.get(actorId);
+		if (movingEntity) onAnimEvent?.({
+			kind: "move",
+			entity: movingEntity,
+			from: {
+				x: actor.x,
+				z: actor.y
+			},
+			to: {
+				x: nx,
+				z: ny
+			}
 		});
 		return {
 			...state,
@@ -2129,7 +2204,7 @@ function makeTurnsHandle(internal, dungeonHandle) {
 		get turn() {
 			return internal.turnCounter;
 		},
-		commit(action) {
+		async commit(action) {
 			if (internal.options.transport) {
 				internal.options.transport.send(action);
 				return;
@@ -2138,11 +2213,12 @@ function makeTurnsHandle(internal, dungeonHandle) {
 			const solid = internal.solidData;
 			const { width, height } = internal.dungeonOutputs;
 			const dungOut = internal.dungeonOutputs;
+			const onAnimEvent = (e) => internal.animationRegistry._enqueue(e);
 			const deps = {
 				isWalkable: (x, y) => !isSolid(x, y, solid, width, height),
 				monsterDecide: (state, monsterId) => decideChasePlayer(state, monsterId, dungOut, (x, y) => !isSolid(x, y, solid, width, height), (x, y) => isSolid(x, y, solid, width, height)),
 				computeCost: (actorId, a) => defaultComputeCost(actorId, a, internal.turnState.actors),
-				applyAction: makeApplyAction(internal, internal.options.combat),
+				applyAction: makeApplyAction(internal, internal.options.combat, onAnimEvent),
 				onTimeAdvanced: ({ nextTime, prevTime, state }) => {
 					if (nextTime > prevTime) {
 						internal.turnCounter += 1;
@@ -2157,6 +2233,7 @@ function makeTurnsHandle(internal, dungeonHandle) {
 				}
 			};
 			internal.turnState = commitPlayerAction(internal.turnState, deps, action);
+			await internal.animationRegistry._flush();
 			syncAllEntitiesFromTurnState(internal);
 			updateFovAndMinimap(internal);
 		},
@@ -2463,6 +2540,7 @@ function createGame(canvas, options) {
 		inventory: []
 	};
 	const missionsHandle = createMissionSystem(events, options.transport);
+	const animationRegistry = createAnimationRegistry();
 	const internal = {
 		options,
 		canvas,
@@ -2486,6 +2564,7 @@ function createGame(canvas, options) {
 		surfacePainterCb: null,
 		keybindingsHandles: [],
 		missions: missionsHandle,
+		animationRegistry,
 		destroyed: false
 	};
 	let dungeonHandle;
@@ -2493,6 +2572,15 @@ function createGame(canvas, options) {
 	let generated = false;
 	dungeonHandle = makeDungeonHandle(internal);
 	turnsHandle = makeTurnsHandle(internal, dungeonHandle);
+	events.on("heal", ({ entity, amount }) => {
+		if (internal.destroyed) return;
+		const fullEntity = internal.entityById.get(entity.id);
+		if (fullEntity) internal.animationRegistry._enqueue({
+			kind: "heal",
+			entity: fullEntity,
+			amount
+		});
+	});
 	events.on("turn", ({ turn }) => {
 		if (internal.destroyed) return;
 		missionsHandle._tick({
@@ -2504,10 +2592,90 @@ function createGame(canvas, options) {
 		});
 	});
 	if (options.transport) {
-		options.transport.onStateUpdate((update) => {
+		options.transport.onStateUpdate(async (update) => {
 			if (internal.destroyed) return;
 			if (internal.turnState) {
-				let actors = { ...internal.turnState.actors };
+				const oldActors = internal.turnState.actors;
+				for (const [pid, ps] of Object.entries(update.players)) {
+					const old = oldActors[pid];
+					if (!old) continue;
+					const entity = internal.entityById.get(pid);
+					if (!entity) continue;
+					if (old.x !== ps.x || old.y !== ps.y) internal.animationRegistry._enqueue({
+						kind: "move",
+						entity,
+						from: {
+							x: old.x,
+							z: old.y
+						},
+						to: {
+							x: ps.x,
+							z: ps.y
+						}
+					});
+					if (ps.hp < old.hp) internal.animationRegistry._enqueue({
+						kind: "damage",
+						entity,
+						amount: old.hp - ps.hp
+					});
+					if (old.alive && !ps.alive) internal.animationRegistry._enqueue({
+						kind: "death",
+						entity
+					});
+				}
+				if (update.monsters) for (const mn of update.monsters) {
+					let entity = internal.entityById.get(mn.id);
+					if (!entity) {
+						entity = {
+							id: mn.id,
+							kind: "enemy",
+							type: mn.type,
+							sprite: mn.sprite,
+							x: mn.x,
+							z: mn.z,
+							hp: mn.hp,
+							maxHp: mn.maxHp,
+							alive: mn.alive,
+							attack: mn.attack,
+							defense: mn.defense,
+							speed: mn.speed,
+							blocksMove: mn.blocksMove,
+							faction: mn.faction,
+							tick: mn.tick
+						};
+						if (mn.spriteMap) entity.spriteMap = mn.spriteMap;
+						internal.entityById.set(mn.id, entity);
+					}
+					const old = oldActors[mn.id];
+					if (old) {
+						if (old.x !== mn.x || old.y !== mn.z) internal.animationRegistry._enqueue({
+							kind: "move",
+							entity,
+							from: {
+								x: old.x,
+								z: old.y
+							},
+							to: {
+								x: mn.x,
+								z: mn.z
+							}
+						});
+						if (mn.hp < old.hp) internal.animationRegistry._enqueue({
+							kind: "damage",
+							entity,
+							amount: old.hp - mn.hp
+						});
+						if (old.alive && !mn.alive) internal.animationRegistry._enqueue({
+							kind: "death",
+							entity
+						});
+					}
+					entity.x = mn.x;
+					entity.z = mn.z;
+					entity.hp = mn.hp;
+					entity.alive = mn.alive;
+				}
+				let actors = { ...oldActors };
 				for (const [pid, ps] of Object.entries(update.players)) {
 					const actor = actors[pid];
 					if (actor) actors[pid] = {
@@ -2518,12 +2686,44 @@ function createGame(canvas, options) {
 						alive: ps.alive
 					};
 				}
+				for (const mn of update.monsters ?? []) {
+					const existing = actors[mn.id];
+					if (existing) actors[mn.id] = {
+						...existing,
+						x: mn.x,
+						y: mn.z,
+						hp: mn.hp,
+						alive: mn.alive
+					};
+					else actors[mn.id] = {
+						id: mn.id,
+						kind: "monster",
+						name: mn.type,
+						glyph: mn.type[0] ?? "?",
+						x: mn.x,
+						y: mn.z,
+						speed: mn.speed,
+						alive: mn.alive,
+						blocksMovement: mn.blocksMove,
+						hp: mn.hp,
+						maxHp: mn.maxHp,
+						attack: mn.attack,
+						defense: mn.defense,
+						xp: 0,
+						danger: 1,
+						alertState: "idle",
+						rpsEffect: "none",
+						searchTurnsLeft: 0,
+						lastKnownPlayerPos: null
+					};
+				}
 				internal.turnState = {
 					...internal.turnState,
 					actors,
 					awaitingPlayerInput: true
 				};
 			}
+			await internal.animationRegistry._flush();
 			const myState = update.players[internal.playerActorId];
 			if (myState) {
 				internal.playerState.entity.x = myState.x;
@@ -2565,6 +2765,9 @@ function createGame(canvas, options) {
 		},
 		get missions() {
 			return internal.missions;
+		},
+		get animations() {
+			return internal.animationRegistry;
 		},
 		generate() {
 			if (generated) return;
@@ -3727,6 +3930,22 @@ function createDungeonRenderer(element, game, options = {}) {
 			currentEntities = entities;
 			syncEntities(entities);
 		},
+		worldToScreen(gridX, gridZ, worldY) {
+			const wx = (gridX + .5) * tileSize;
+			const wy = worldY ?? ceilingH * .4;
+			const wz = (gridZ + .5) * tileSize;
+			const v = new THREE.Vector3(wx, wy, wz).project(camera);
+			if (v.z > 1) return null;
+			const w = element.clientWidth || 1;
+			const h = element.clientHeight || 1;
+			const sx = (v.x * .5 + .5) * w;
+			const sy = (-v.y * .5 + .5) * h;
+			if (sx < 0 || sx > w || sy < 0 || sy > h) return null;
+			return {
+				x: sx,
+				y: sy
+			};
+		},
 		createAtlasMaterial() {
 			return packedAtlas ? makeAtlasMaterial() : null;
 		},
@@ -3876,6 +4095,7 @@ function createWebSocketTransport(url) {
 	const updateHandlers = [];
 	const chatHandlers = [];
 	const missionCompleteHandlers = [];
+	const bufferedUpdates = [];
 	function dispatch(raw) {
 		let msg;
 		try {
@@ -3885,7 +4105,8 @@ function createWebSocketTransport(url) {
 		}
 		if (msg.type === "state") {
 			const update = msg;
-			for (const h of updateHandlers) h(update);
+			if (updateHandlers.length > 0) for (const h of updateHandlers) h(update);
+			else bufferedUpdates.push(update);
 		}
 		if (msg.type === "chat") {
 			const payload = {
@@ -3950,6 +4171,8 @@ function createWebSocketTransport(url) {
 		},
 		onStateUpdate(handler) {
 			updateHandlers.push(handler);
+			for (const u of bufferedUpdates) handler(u);
+			bufferedUpdates.length = 0;
 		},
 		initDungeon(payload) {
 			if (!ws || !_playerId) return;

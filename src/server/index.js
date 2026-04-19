@@ -106,6 +106,66 @@ function isOccupied(room, x, y, excludeId) {
   return false
 }
 
+/** Return the first alive monster at grid (x, z) or null. */
+function monsterAt(room, x, z) {
+  return room.monsters.find(m => m.alive && m.x === x && m.z === z) ?? null
+}
+
+/** Return the first alive player at grid (x, y) or null. */
+function playerAt(room, x, y) {
+  for (const [, p] of room.players) {
+    if (p.alive && p.x === x && p.y === y) return p
+  }
+  return null
+}
+
+/** Move all alive enemy monsters one step toward the nearest player, attacking if adjacent. */
+function runMonsterAI(room) {
+  for (const monster of room.monsters) {
+    if (!monster.alive || monster.faction !== 'enemy') continue
+
+    // Find nearest alive player by Manhattan distance.
+    let target = null
+    let minDist = Infinity
+    for (const [, player] of room.players) {
+      if (!player.alive) continue
+      // Monster uses (x, z); server player uses (x, y) — same axis.
+      const dist = Math.abs(monster.x - player.x) + Math.abs(monster.z - player.y)
+      if (dist < minDist) { minDist = dist; target = player }
+    }
+    if (!target) continue
+
+    // 4-directional step: try dominant axis first, then the other.
+    const adx = target.x - monster.x
+    const adz = target.y - monster.z  // server y == monster z axis
+    const steps = Math.abs(adx) >= Math.abs(adz)
+      ? [[Math.sign(adx), 0], [0, Math.sign(adz)]]
+      : [[0, Math.sign(adz)], [Math.sign(adx), 0]]
+
+    for (const [sx, sz] of steps) {
+      if (sx === 0 && sz === 0) continue
+      const nx = monster.x + sx
+      const nz = monster.z + sz  // nz == server y for this cell
+
+      // Attack if a player is in the target cell.
+      const hit = playerAt(room, nx, nz)
+      if (hit) {
+        const damage = Math.max(1, monster.attack - (hit.defense ?? 2))
+        hit.hp = Math.max(0, hit.hp - damage)
+        if (hit.hp <= 0) hit.alive = false
+        break
+      }
+
+      // Move if the cell is open.
+      if (isWalkable(room, nx, nz) && !monsterAt(room, nx, nz)) {
+        monster.x = nx
+        monster.z = nz
+        break
+      }
+    }
+  }
+}
+
 /**
  * Return the first walkable, unoccupied cell at or adjacent to (preferX, preferY).
  * Tries the centre first, then the 4 cardinal neighbours, then the 4 diagonals.
@@ -178,6 +238,16 @@ function applyAction(room, playerId, action) {
     const ny = player.y + Number(dy)
     if (!isWalkable(room, nx, ny)) return false
     if (isOccupied(room, nx, ny, playerId)) return false
+
+    // Attack monster if one occupies the target cell (ny == monster z axis).
+    const monster = monsterAt(room, nx, ny)
+    if (monster) {
+      const damage = Math.max(1, player.attack - monster.defense)
+      monster.hp = Math.max(0, monster.hp - damage)
+      if (monster.hp <= 0) monster.alive = false
+      return true
+    }
+
     player.x = nx
     player.y = ny
     return true
@@ -232,12 +302,16 @@ wss.on('connection', (ws) => {
       // hasn't been initialised yet (host hasn't sent dungeon_init) the spawn
       // defaults to (1,1) and will be corrected when dungeon_init arrives.
       const spawnPos = findSpawnPos(room, room.spawnX, room.spawnY)
+      const joinMeta = (msg.meta && typeof msg.meta === 'object') ? msg.meta : {}
+      const maxHp = Number(joinMeta.maxHp ?? 30)
       room.players.set(playerId, {
         x: spawnPos.x, y: spawnPos.y,
-        hp: 30, maxHp: 30,
+        hp: maxHp, maxHp,
+        attack: Number(joinMeta.attack ?? 5),
+        defense: Number(joinMeta.defense ?? 2),
         alive: true,
         facing: 0,
-        meta: (msg.meta && typeof msg.meta === 'object') ? msg.meta : {},
+        meta: joinMeta,
         lastActionAt: 0,
         ws,
       })
@@ -311,6 +385,7 @@ wss.on('connection', (ws) => {
       if (!accepted) return
 
       room.turn++
+      runMonsterAI(room)
 
       // Broadcast full state to everyone in the room
       broadcastAll(room, stateSnapshot(room))
