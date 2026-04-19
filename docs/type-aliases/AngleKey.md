@@ -4,4 +4,4 @@
 
 > **AngleKey** = `"N"` \| `"NE"` \| `"E"` \| `"SE"` \| `"S"` \| `"SW"` \| `"W"` \| `"NW"`
 
-Defined in: [rendering/billboardSprites.ts:16](https://github.com/philbgarner/atomic-core/blob/00ebe2c72dacab39c637c5b68506af1715bce7d0/src/lib/rendering/billboardSprites.ts#L16)
+Defined in: [rendering/billboardSprites.ts:16](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/rendering/billboardSprites.ts#L16)

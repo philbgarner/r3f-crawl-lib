@@ -114,6 +114,7 @@ async function init() {
   const resolver = packedAtlasResolver(packed);
 
   renderer = createDungeonRenderer(viewportEl, game, {
+    offsetFactor: 1 / 12,
     packedAtlas: packed,
     tileNameResolver: resolver,
     floorTile: "fancy_tile_floor_stone.png",

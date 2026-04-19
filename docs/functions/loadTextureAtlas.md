@@ -4,7 +4,7 @@
 
 > **loadTextureAtlas**(`imageUrl`, `atlasJson`, `options?`): `Promise`\<[`PackedAtlas`](../type-aliases/PackedAtlas.md)\>
 
-Defined in: [rendering/textureLoader.ts:375](https://github.com/philbgarner/atomic-core/blob/00ebe2c72dacab39c637c5b68506af1715bce7d0/src/lib/rendering/textureLoader.ts#L375)
+Defined in: [rendering/textureLoader.ts:375](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/rendering/textureLoader.ts#L375)
 
 Load a TexturePacker-format sprite atlas, repack all sprites into a
 power-of-two OffscreenCanvas, and return a PackedAtlas with UV data and

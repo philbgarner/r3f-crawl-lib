@@ -91,6 +91,16 @@ export type DungeonRendererOptions = {
    */
   ceilSkirtTiles?: DirectionFaceMap;
   /**
+   * Fraction of tileSize used as the height step per offset unit.
+   * Controls how tall each floor/ceiling height level is. Default: 0.5.
+   */
+  offsetFactor?: number;
+  /**
+   * Camera eye height as a fraction of ceilingHeight.
+   * 0 = floor level, 1 = ceiling level. Default: 0.66 (~5 ft in a 7.5 ft room).
+   */
+  eyeHeightFactor?: number;
+  /**
    * Per-entity-type (or per-kind) visual overrides for the cube renderer.
    * Keys are matched against `entity.type` first, then `entity.kind`.
    * Unmatched entities use built-in defaults (0.35×0.55×0.35 tileSize fractions, red).
@@ -322,6 +332,7 @@ export function createDungeonRenderer(
 ): DungeonRenderer {
   const tileSize = options.tileSize ?? 3;
   const ceilingH = options.ceilingHeight ?? 3;
+  const eyeHeightFactor = options.eyeHeightFactor ?? EYE_HEIGHT_FACTOR;
   const fov = options.fov ?? 75;
   const fogNear = options.fogNear ?? 5;
   const fogFar = options.fogFar ?? 24;
@@ -441,7 +452,7 @@ export function createDungeonRenderer(
       | Uint8Array
       | undefined;
     const wallMidY = ceilingH / 2;
-    const offsetStep = tileSize * 0.5;
+    const offsetStep = tileSize * (options.offsetFactor ?? 0.5);
 
     const matrices: THREE.Matrix4[] = [];
     const uvRects: UvRect[] = [];
@@ -567,67 +578,37 @@ export function createDungeonRenderer(
         }
 
         if (spec.target === "floorSkirt" && floorVal !== 0) {
-          const feMidY = -tileSize / 2;
+          const currentFloorY = (floorVal - 128) * offsetStep;
+          function tryAddFloorSkirtTiled(
+            nfVal: number,
+            mx: number,
+            mz: number,
+            ry: number,
+            dir: "north" | "south" | "east" | "west",
+          ) {
+            const result = filter(cx, cz, dir);
+            if (!result) return;
+            const neighborFloorY = (nfVal - 128) * offsetStep;
+            const stepH = currentFloorY - neighborFloorY;
+            const fullPanels = Math.floor(stepH / tileSize);
+            const rem = stepH - fullPanels * tileSize;
+            for (let i = 0; i < fullPanels; i++) {
+              const midY = neighborFloorY + i * tileSize + tileSize / 2;
+              tryAdd(result, makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, tileSize), 0, 1.0);
+            }
+            if (rem > 0.001) {
+              const midY = neighborFloorY + fullPanels * tileSize + rem / 2;
+              tryAdd(result, makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, rem), 0, rem / tileSize);
+            }
+          }
           const nfN = openFloorVal(cx, cz - 1);
-          if (nfN !== null && nfN < floorVal)
-            tryAdd(
-              filter(cx, cz, "north"),
-              makeFaceMatrix(
-                wx,
-                feMidY,
-                cz * tileSize,
-                0,
-                Math.PI,
-                0,
-                tileSize,
-                tileSize,
-              ),
-            );
+          if (nfN !== null && nfN < floorVal) tryAddFloorSkirtTiled(nfN, wx, cz * tileSize, Math.PI, "north");
           const nfS = openFloorVal(cx, cz + 1);
-          if (nfS !== null && nfS < floorVal)
-            tryAdd(
-              filter(cx, cz, "south"),
-              makeFaceMatrix(
-                wx,
-                feMidY,
-                (cz + 1) * tileSize,
-                0,
-                0,
-                0,
-                tileSize,
-                tileSize,
-              ),
-            );
+          if (nfS !== null && nfS < floorVal) tryAddFloorSkirtTiled(nfS, wx, (cz + 1) * tileSize, 0, "south");
           const nfW = openFloorVal(cx - 1, cz);
-          if (nfW !== null && nfW < floorVal)
-            tryAdd(
-              filter(cx, cz, "west"),
-              makeFaceMatrix(
-                cx * tileSize,
-                feMidY,
-                wz,
-                0,
-                -HALF_PI,
-                0,
-                tileSize,
-                tileSize,
-              ),
-            );
+          if (nfW !== null && nfW < floorVal) tryAddFloorSkirtTiled(nfW, cx * tileSize, wz, -HALF_PI, "west");
           const nfE = openFloorVal(cx + 1, cz);
-          if (nfE !== null && nfE < floorVal)
-            tryAdd(
-              filter(cx, cz, "east"),
-              makeFaceMatrix(
-                (cx + 1) * tileSize,
-                feMidY,
-                wz,
-                0,
-                HALF_PI,
-                0,
-                tileSize,
-                tileSize,
-              ),
-            );
+          if (nfE !== null && nfE < floorVal) tryAddFloorSkirtTiled(nfE, (cx + 1) * tileSize, wz, HALF_PI, "east");
         }
 
         if (spec.target === "ceilSkirt") {
@@ -641,24 +622,23 @@ export function createDungeonRenderer(
           ) => {
             if (ncVal === null || ncVal <= ceilVal) return;
             const h = (ncVal - ceilVal) * offsetStep;
-            const midY = yCurrent - h / 2;
-            tryAdd(
-              filter(cx, cz, dir),
-              makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h),
-              0,
-              h / tileSize,
-            );
+            const result = filter(cx, cz, dir);
+            if (!result) return;
+            const fullPanels = Math.floor(h / tileSize);
+            const rem = h - fullPanels * tileSize;
+            for (let i = 0; i < fullPanels; i++) {
+              const midY = yCurrent - i * tileSize - tileSize / 2;
+              tryAdd(result, makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, tileSize), 0, 1.0);
+            }
+            if (rem > 0.001) {
+              const midY = yCurrent - fullPanels * tileSize - rem / 2;
+              tryAdd(result, makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, rem), 0, rem / tileSize);
+            }
           };
           addCS(openCeilVal(cx, cz - 1), wx, cz * tileSize, Math.PI, "north");
           addCS(openCeilVal(cx, cz + 1), wx, (cz + 1) * tileSize, 0, "south");
           addCS(openCeilVal(cx - 1, cz), cx * tileSize, wz, -HALF_PI, "west");
-          addCS(
-            openCeilVal(cx + 1, cz),
-            (cx + 1) * tileSize,
-            wz,
-            HALF_PI,
-            "east",
-          );
+          addCS(openCeilVal(cx + 1, cz), (cx + 1) * tileSize, wz, HALF_PI, "east");
         }
       }
     }
@@ -673,7 +653,7 @@ export function createDungeonRenderer(
       useAtlas,
       new Float32Array(offsets),
       rotations,
-      spec.target === "ceilSkirt" ? heightScales : undefined,
+      (spec.target === "ceilSkirt" || spec.target === "floorSkirt") ? heightScales : undefined,
     );
 
     if (spec.polygonOffset !== false) {
@@ -694,7 +674,7 @@ export function createDungeonRenderer(
     const { width, height } = outputs;
     const solid = outputs.textures.solid.image.data as Uint8Array;
     const wallMidY = ceilingH / 2;
-    const offsetFactor = 0.5;
+    const offsetFactor = options.offsetFactor ?? 0.5;
     const offsetStep = tileSize * offsetFactor;
 
     // Height offset texture data (value 128 = no offset; 0 = pit for floor).
@@ -730,6 +710,7 @@ export function createDungeonRenderer(
     const wallRots: number[] = [];
     const floorEdgeRots: number[] = [];
     const ceilEdgeRots: number[] = [];
+    const floorEdgeHeightScales: number[] = [];
     const ceilEdgeHeightScales: number[] = [];
 
     function isSolid(cx: number, cz: number) {
@@ -847,86 +828,48 @@ export function createDungeonRenderer(
           wallRots.push(s.rotation ?? 0);
         }
 
-        // Voxel-style floor edge skirts: side faces of the floor cube (top=y0, extends down).
-        // Only emit when the open neighbour has a different floor offset (Minecraft face-culling rule).
+        // Voxel-style floor edge skirts: tiled panels covering the full step height.
+        // Only emit when the open neighbour has a lower floor level.
         if (floorVal !== 0) {
-          const feMidY = -tileSize / 2;
-          // Outward-facing = opposite rotations to inward-facing walls.
+          const currentFloorY = (floorVal - 128) * offsetStep;
+          function addFloorSkirt(
+            nfVal: number,
+            mx: number,
+            mz: number,
+            ry: number,
+            dir: "north" | "south" | "east" | "west",
+          ) {
+            const s = spec(floorSkirtTiles, dir, floorId);
+            const neighborFloorY = (nfVal - 128) * offsetStep;
+            const stepH = currentFloorY - neighborFloorY;
+            const fullPanels = Math.floor(stepH / tileSize);
+            const rem = stepH - fullPanels * tileSize;
+            for (let i = 0; i < fullPanels; i++) {
+              const midY = neighborFloorY + i * tileSize + tileSize / 2;
+              floorEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, tileSize));
+              floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+              floorEdgeRots.push(s.rotation ?? 0);
+              floorEdgeHeightScales.push(1.0);
+            }
+            if (rem > 0.001) {
+              const midY = neighborFloorY + fullPanels * tileSize + rem / 2;
+              floorEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, rem));
+              floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+              floorEdgeRots.push(s.rotation ?? 0);
+              floorEdgeHeightScales.push(rem / tileSize);
+            }
+          }
           const nfN = openFloorVal(cx, cz - 1);
-          if (nfN !== null && nfN < floorVal) {
-            const s = spec(floorSkirtTiles, "north", floorId);
-            floorEdges.push(
-              makeFaceMatrix(
-                wx,
-                feMidY,
-                cz * tileSize,
-                0,
-                Math.PI,
-                0,
-                tileSize,
-                tileSize,
-              ),
-            );
-            floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
-            floorEdgeRots.push(s.rotation ?? 0);
-          }
+          if (nfN !== null && nfN < floorVal) addFloorSkirt(nfN, wx, cz * tileSize, Math.PI, "north");
           const nfS = openFloorVal(cx, cz + 1);
-          if (nfS !== null && nfS < floorVal) {
-            const s = spec(floorSkirtTiles, "south", floorId);
-            floorEdges.push(
-              makeFaceMatrix(
-                wx,
-                feMidY,
-                (cz + 1) * tileSize,
-                0,
-                0,
-                0,
-                tileSize,
-                tileSize,
-              ),
-            );
-            floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
-            floorEdgeRots.push(s.rotation ?? 0);
-          }
+          if (nfS !== null && nfS < floorVal) addFloorSkirt(nfS, wx, (cz + 1) * tileSize, 0, "south");
           const nfW = openFloorVal(cx - 1, cz);
-          if (nfW !== null && nfW < floorVal) {
-            const s = spec(floorSkirtTiles, "west", floorId);
-            floorEdges.push(
-              makeFaceMatrix(
-                cx * tileSize,
-                feMidY,
-                wz,
-                0,
-                -HALF_PI,
-                0,
-                tileSize,
-                tileSize,
-              ),
-            );
-            floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
-            floorEdgeRots.push(s.rotation ?? 0);
-          }
+          if (nfW !== null && nfW < floorVal) addFloorSkirt(nfW, cx * tileSize, wz, -HALF_PI, "west");
           const nfE = openFloorVal(cx + 1, cz);
-          if (nfE !== null && nfE < floorVal) {
-            const s = spec(floorSkirtTiles, "east", floorId);
-            floorEdges.push(
-              makeFaceMatrix(
-                (cx + 1) * tileSize,
-                feMidY,
-                wz,
-                0,
-                HALF_PI,
-                0,
-                tileSize,
-                tileSize,
-              ),
-            );
-            floorEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
-            floorEdgeRots.push(s.rotation ?? 0);
-          }
+          if (nfE !== null && nfE < floorVal) addFloorSkirt(nfE, (cx + 1) * tileSize, wz, HALF_PI, "east");
         }
 
-        // Voxel-style ceiling edge skirts: height = exact difference between the two ceiling levels.
+        // Voxel-style ceiling edge skirts: tiled panels covering the full step height.
         // Current cell's actual ceiling Y in world space:
         const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
         function addCeilSkirt(
@@ -937,12 +880,23 @@ export function createDungeonRenderer(
           dir: "north" | "south" | "east" | "west",
         ) {
           const s = spec(ceilSkirtTiles, dir, ceilId);
-          const h = (ncVal - ceilVal) * offsetStep; // height of the step
-          const midY = yCurrent - h / 2; // centre between the two ceiling levels
-          ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, h));
-          ceilEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
-          ceilEdgeRots.push(s.rotation ?? 0);
-          ceilEdgeHeightScales.push(h / tileSize); // clip UV so bricks stay square
+          const h = (ncVal - ceilVal) * offsetStep;
+          const fullPanels = Math.floor(h / tileSize);
+          const rem = h - fullPanels * tileSize;
+          for (let i = 0; i < fullPanels; i++) {
+            const midY = yCurrent - i * tileSize - tileSize / 2;
+            ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, tileSize));
+            ceilEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+            ceilEdgeRots.push(s.rotation ?? 0);
+            ceilEdgeHeightScales.push(1.0);
+          }
+          if (rem > 0.001) {
+            const midY = yCurrent - fullPanels * tileSize - rem / 2;
+            ceilEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, rem));
+            ceilEdgeRects.push(getUvRect(resolveTile(s.tile, resolver)));
+            ceilEdgeRots.push(s.rotation ?? 0);
+            ceilEdgeHeightScales.push(rem / tileSize);
+          }
         }
         const ncN = openCeilVal(cx, cz - 1);
         if (ncN !== null && ncN > ceilVal)
@@ -994,6 +948,7 @@ export function createDungeonRenderer(
       !!packedAtlas,
       undefined,
       floorEdgeRots,
+      floorEdgeHeightScales,
     );
     scene.add(floorEdgeMesh);
 
@@ -1153,7 +1108,7 @@ export function createDungeonRenderer(
       if (dy < -Math.PI) dy += 2 * Math.PI;
       curYaw += dy * k;
 
-      camera.position.set(curX, ceilingH * EYE_HEIGHT_FACTOR, curZ);
+      camera.position.set(curX, ceilingH * eyeHeightFactor, curZ);
       camera.rotation.set(0, curYaw, 0, "YXZ");
 
       // Update all live billboard handles with current camera yaw.

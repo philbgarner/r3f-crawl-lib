@@ -76,6 +76,16 @@ export type DungeonRendererOptions = {
      */
     ceilSkirtTiles?: DirectionFaceMap;
     /**
+     * Fraction of tileSize used as the height step per offset unit.
+     * Controls how tall each floor/ceiling height level is. Default: 0.5.
+     */
+    offsetFactor?: number;
+    /**
+     * Camera eye height as a fraction of ceilingHeight.
+     * 0 = floor level, 1 = ceiling level. Default: 0.66 (~5 ft in a 7.5 ft room).
+     */
+    eyeHeightFactor?: number;
+    /**
      * Per-entity-type (or per-kind) visual overrides for the cube renderer.
      * Keys are matched against `entity.type` first, then `entity.kind`.
      * Unmatched entities use built-in defaults (0.35×0.55×0.35 tileSize fractions, red).

@@ -1407,12 +1407,14 @@ var renderer = AtomicCore.createDungeonRenderer(viewportEl, game, {
   wallTileId:    16,
 
   // ── Camera ────────────────────────────────────────────────────────────────
-  fov:          75,          // degrees; default 75
-  lerpFactor:   0.18,        // camera smoothing (0 = instant); default 0.18
+  fov:             75,       // degrees; default 75
+  lerpFactor:      0.18,     // camera smoothing (0 = instant); default 0.18
+  eyeHeightFactor: 0.66,     // eye level as fraction of ceilingHeight (0=floor, 1=ceiling); default 0.66
 
   // ── Geometry ─────────────────────────────────────────────────────────────
   tileSize:      3,          // world units per grid cell; default 3
   ceilingHeight: 3,          // world-unit room height; default 3
+  offsetFactor:  0.5,        // height step per floor/ceiling offset unit, as fraction of tileSize; default 0.5
 
   // ── Fog ──────────────────────────────────────────────────────────────────
   fogNear:  5,               // default 5

@@ -4,7 +4,7 @@
 
 > **ThemeSelector** = `string` \| `string`[] \| \[`string`, `number`\][] \| ((`ctx`) => `string`)
 
-Defined in: [dungeon/themes.ts:26](https://github.com/philbgarner/atomic-core/blob/00ebe2c72dacab39c637c5b68506af1715bce7d0/src/lib/dungeon/themes.ts#L26)
+Defined in: [dungeon/themes.ts:26](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/dungeon/themes.ts#L26)
 
 Theme selector for a dungeon config:
 - string: a single theme key from the registry

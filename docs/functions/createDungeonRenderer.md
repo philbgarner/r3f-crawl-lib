@@ -4,7 +4,7 @@
 
 > **createDungeonRenderer**(`element`, `game`, `options?`): [`DungeonRenderer`](../type-aliases/DungeonRenderer.md)
 
-Defined in: [rendering/dungeonRenderer.ts:306](https://github.com/philbgarner/atomic-core/blob/00ebe2c72dacab39c637c5b68506af1715bce7d0/src/lib/rendering/dungeonRenderer.ts#L306)
+Defined in: [rendering/dungeonRenderer.ts:328](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/rendering/dungeonRenderer.ts#L328)
 
 ## Parameters
 

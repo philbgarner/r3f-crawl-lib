@@ -2,7 +2,7 @@
 
 # Interface: EventEmitter
 
-Defined in: [events/eventEmitter.ts:69](https://github.com/philbgarner/atomic-core/blob/00ebe2c72dacab39c637c5b68506af1715bce7d0/src/lib/events/eventEmitter.ts#L69)
+Defined in: [events/eventEmitter.ts:69](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/events/eventEmitter.ts#L69)
 
 ## Methods
 
@@ -10,7 +10,7 @@ Defined in: [events/eventEmitter.ts:69](https://github.com/philbgarner/atomic-co
 
 > **emit**\<`K`\>(...`args`): `void`
 
-Defined in: [events/eventEmitter.ts:72](https://github.com/philbgarner/atomic-core/blob/00ebe2c72dacab39c637c5b68506af1715bce7d0/src/lib/events/eventEmitter.ts#L72)
+Defined in: [events/eventEmitter.ts:72](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/events/eventEmitter.ts#L72)
 
 #### Type Parameters
 
@@ -34,7 +34,7 @@ Defined in: [events/eventEmitter.ts:72](https://github.com/philbgarner/atomic-co
 
 > **off**\<`K`\>(`event`, `handler`): `void`
 
-Defined in: [events/eventEmitter.ts:71](https://github.com/philbgarner/atomic-core/blob/00ebe2c72dacab39c637c5b68506af1715bce7d0/src/lib/events/eventEmitter.ts#L71)
+Defined in: [events/eventEmitter.ts:71](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/events/eventEmitter.ts#L71)
 
 #### Type Parameters
 
@@ -59,7 +59,7 @@ Defined in: [events/eventEmitter.ts:71](https://github.com/philbgarner/atomic-co
 
 > **on**\<`K`\>(`event`, `handler`): `void`
 
-Defined in: [events/eventEmitter.ts:70](https://github.com/philbgarner/atomic-core/blob/00ebe2c72dacab39c637c5b68506af1715bce7d0/src/lib/events/eventEmitter.ts#L70)
+Defined in: [events/eventEmitter.ts:70](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/events/eventEmitter.ts#L70)
 
 #### Type Parameters
 
