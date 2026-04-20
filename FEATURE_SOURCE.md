@@ -23,6 +23,7 @@ src/lib/
   dungeon/
     bsp.ts
     cellular.ts
+    colliderFlags.ts
     serialize.ts
     tiled.ts
     themes.ts
@@ -131,11 +132,33 @@ Camera-facing billboard quads driven by a multi-layer sprite system. Actors decl
 ### BSP dungeon generator
 
 **Files:**
-- `dungeon/bsp.ts` — BSP tree split, room placement, corridor carving, `setupDungeon()`, `DungeonOutputs` shape; produces `floorHeightOffset` and `ceilingHeightOffset` textures defaulting to 128
-- `dungeon/cellular.ts` — cellular automata generator producing the same `DungeonOutputs` shape
-- `dungeon/serialize.ts` — serialize/deserialize a `DungeonOutputs` to JSON
+- `dungeon/bsp.ts` — BSP tree split, room placement, corridor carving, `setupDungeon()`, `DungeonOutputs` shape; produces `floorHeightOffset`, `ceilingHeightOffset`, and `colliderFlags` textures
+- `dungeon/cellular.ts` — cellular automata generator producing the same `DungeonOutputs` shape including `colliderFlags`
+- `dungeon/colliderFlags.ts` — `IS_WALKABLE`, `IS_BLOCKED`, `IS_LIGHT_PASSABLE` constants; `buildColliderFlags()` deriver; `isWalkableCell()`, `isBlockedCell()`, `isLightPassableCell()` predicates
+- `dungeon/serialize.ts` — serialize/deserialize a `DungeonOutputs` to JSON (includes `colliderFlags`)
 - `dungeon/themes.ts` — `ThemeDef` type; `ThemeSelector` union (string | string[] | weighted array | callback); built-in themes (dungeon, crypt, catacomb, industrial, ruins); public exports `THEMES`, `THEME_KEYS`, `resolveTheme()`, `registerTheme()`, `getTheme()`
 - `utils/geometry.ts` — `MinHeap<T>`, `octile()` used internally by BSP helpers
+
+---
+
+### Collider flags (per-cell movement and LOS)
+
+Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture). Default values are derived from the `solid` texture by all generators. Drives `isWalkable` in the turn system, A* pathfinding, monster AI, FOV/LOS, and both camera types.
+
+| Flag | Bit | Meaning |
+|---|---|---|
+| `IS_WALKABLE` | `0x01` | Normal volitional movement permitted |
+| `IS_BLOCKED` | `0x02` | No entry by any means (forced or voluntary) |
+| `IS_LIGHT_PASSABLE` | `0x04` | LOS/light rays pass through |
+
+**Files:**
+- `dungeon/colliderFlags.ts` — constants, `buildColliderFlags()`, `isWalkableCell()`, `isBlockedCell()`, `isLightPassableCell()`
+- `dungeon/bsp.ts` — populates `colliderFlags` in `generateBspDungeon()`
+- `dungeon/cellular.ts` — populates `colliderFlags` in `generateCellularDungeon()`
+- `dungeon/tiled.ts` — populates `colliderFlags` (from optional layer or derived from solid)
+- `dungeon/serialize.ts` — includes `colliderFlags` in serialized snapshot
+- `api/createGame.ts` — stores `colliderFlagsData`; drives `isWalkable` and `isOpaque` callbacks
+- `rendering/camera.ts` — both `createCamera` and `createEotBCamera` accept optional `colliderFlagsData`; `setColliderFlagsData()` method on each
 
 ---
 

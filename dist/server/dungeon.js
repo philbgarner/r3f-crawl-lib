@@ -22,6 +22,23 @@ var RGBAFormat = 1023;
 var UnsignedByteType = 1009;
 var NearestFilter = 1003;
 var ClampToEdgeWrapping = 1001;
+/**
+* Derive a collider-flags byte from a legacy `solid` mask value.
+*   solid === 0  →  floor:  IS_WALKABLE | IS_LIGHT_PASSABLE  (0x05)
+*   solid  > 0  →  wall:   IS_BLOCKED                        (0x02)
+*/
+function colliderFlagsFromSolid(solid) {
+	return solid === 0 ? 5 : 2;
+}
+/**
+* Build a colliderFlags Uint8Array from a solid mask of the same length.
+* This is the default derivation used by all dungeon generators.
+*/
+function buildColliderFlags(solidMask) {
+	const flags = new Uint8Array(solidMask.length);
+	for (let i = 0; i < solidMask.length; i++) flags[i] = colliderFlagsFromSolid(solidMask[i]);
+	return flags;
+}
 //#endregion
 //#region src/lib/dungeon/bsp.ts
 function hashSeedToUint32(seed) {
@@ -600,6 +617,7 @@ function generateBspDungeon(options) {
 	for (let i = 0; i < W * H; i++) if (solid[i] === 0) temperature[i] = 127;
 	const distanceToWall = computeDistanceToWall(solid, W, H);
 	const hazards = new Uint8Array(W * H);
+	const colliderFlagsArr = buildColliderFlags(solid);
 	return {
 		width: W,
 		height: H,
@@ -622,7 +640,8 @@ function generateBspDungeon(options) {
 			ceilingType: maskToDataTextureR8(ceilingType, W, H, "bsp_dungeon_ceiling_type"),
 			ceilingOverlays: maskToDataTextureRGBA(ceilingOverlays, W, H, "bsp_dungeon_ceiling_overlays"),
 			floorHeightOffset: maskToDataTextureR8(floorHeightOffset, W, H, "bsp_dungeon_floor_height_offset"),
-			ceilingHeightOffset: maskToDataTextureR8(ceilingHeightOffset, W, H, "bsp_dungeon_ceiling_height_offset")
+			ceilingHeightOffset: maskToDataTextureR8(ceilingHeightOffset, W, H, "bsp_dungeon_ceiling_height_offset"),
+			colliderFlags: maskToDataTextureR8(colliderFlagsArr, W, H, "bsp_dungeon_collider_flags")
 		}
 	};
 }

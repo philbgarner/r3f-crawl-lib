@@ -1080,6 +1080,43 @@ export function createDungeonRenderer(
           if (nfE !== null && nfE < floorVal) addFloorSkirt(nfE, (cx + 1) * tileSize, wz, HALF_PI, "east");
         }
 
+        // Wall-adjacent floor skirts: when floor is sunken below y=0 and the
+        // neighbour is solid, fill the gap between y=0 and the sunken floor
+        // using the wall tile repeated downward.
+        if (floorVal < 128 && floorVal !== 0) {
+          const gapH = (128 - floorVal) * offsetStep;
+          function addWallFloorSkirt(
+            mx: number,
+            mz: number,
+            ry: number,
+            dir: "north" | "south" | "east" | "west",
+          ) {
+            const s = spec(wallTiles, dir, wallId);
+            const fullPanels = Math.floor(gapH / tileSize);
+            const rem = gapH - fullPanels * tileSize;
+            for (let i = 0; i < fullPanels; i++) {
+              const midY = -(i * tileSize + tileSize / 2);
+              wallSkirtEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, tileSize));
+              wallSkirtRects.push(getUvRect(resolveTile(s.tile, resolver)));
+              wallSkirtRots.push(s.rotation ?? 0);
+              wallSkirtHeightScales.push(1.0);
+              wallSkirtCellMap.push({ cx, cz });
+            }
+            if (rem > 0.001) {
+              const midY = -(fullPanels * tileSize + rem / 2);
+              wallSkirtEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, rem));
+              wallSkirtRects.push(getUvRect(resolveTile(s.tile, resolver)));
+              wallSkirtRots.push(s.rotation ?? 0);
+              wallSkirtHeightScales.push(rem / tileSize);
+              wallSkirtCellMap.push({ cx, cz });
+            }
+          }
+          if (isSolid(cx, cz - 1)) addWallFloorSkirt(wx, cz * tileSize, 0, "north");
+          if (isSolid(cx, cz + 1)) addWallFloorSkirt(wx, (cz + 1) * tileSize, Math.PI, "south");
+          if (isSolid(cx - 1, cz)) addWallFloorSkirt(cx * tileSize, wz, HALF_PI, "west");
+          if (isSolid(cx + 1, cz)) addWallFloorSkirt((cx + 1) * tileSize, wz, -HALF_PI, "east");
+        }
+
         // Voxel-style ceiling edge skirts: tiled panels covering the full step height.
         // Current cell's actual ceiling Y in world space:
         const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;

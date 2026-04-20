@@ -41,6 +41,7 @@ Game logic lives entirely in your JS layer - the library provides the rendering 
     - [Cellular Automata Generator](#cellular-automata-generator)
     - [Dungeon Serialization](#dungeon-serialization)
     - [Tiled Map Import](#tiled-map-import)
+  - [Collider Flags](#collider-flags)
   - [Ceiling & Floor Height Offsets](#ceiling--floor-height-offsets)
   - [Player](#player)
   - [Turn Scheduler](#turn-scheduler)
@@ -863,6 +864,48 @@ dungeon: {
   },
 }
 ```
+
+---
+
+### Collider Flags
+
+Every dungeon cell carries a `colliderFlags` byte (R8 `DataTexture`) that drives movement and line-of-sight decisions. All generators derive default values from the `solid` texture; you can override individual bytes after generation.
+
+#### Flag constants
+
+| Constant | Bit | Meaning |
+|---|---|---|
+| `IS_WALKABLE` | `0x01` | Normal volitional movement (walk/run) is permitted |
+| `IS_BLOCKED` | `0x02` | No entity may enter by any means — forced or voluntary |
+| `IS_LIGHT_PASSABLE` | `0x04` | Light and line-of-sight rays pass through |
+
+#### Cell-type semantics
+
+| Cell type | `IS_WALKABLE` | `IS_BLOCKED` | `IS_LIGHT_PASSABLE` | Behaviour |
+|---|---|---|---|---|
+| Normal floor | ✓ | — | ✓ | Walk freely; LOS passes through |
+| Solid wall | — | ✓ | — | Nothing enters; LOS blocked |
+| Pit | — | — | — | Can't walk in voluntarily; can be shoved in; LOS blocked |
+| Window / screen | — | ✓ | ✓ | Can't enter; LOS passes through |
+
+#### Overriding flags at runtime
+
+```js
+import { IS_BLOCKED, IS_WALKABLE, IS_LIGHT_PASSABLE } from '@atomic-core/lib'
+
+// After game.generate() — mark a cell as a pit
+const flagsData = game.dungeon.outputs.textures.colliderFlags.image.data
+const W = game.dungeon.outputs.width
+// cell (5, 3) becomes a pit: not walkable, not blocked (can be shoved in), not light-passable
+flagsData[3 * W + 5] = 0x00
+
+// mark a cell as a window: blocked, light passes through
+flagsData[4 * W + 6] = IS_BLOCKED | IS_LIGHT_PASSABLE
+
+game.dungeon.outputs.textures.colliderFlags.needsUpdate = true
+```
+
+The helper functions `isWalkableCell(flags)`, `isBlockedCell(flags)`, and `isLightPassableCell(flags)` are exported for reading individual cell flags in game code.
 
 ---
 

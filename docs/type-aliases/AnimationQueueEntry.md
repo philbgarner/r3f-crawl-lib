@@ -4,4 +4,4 @@
 
 > **AnimationQueueEntry** = `{ [K in AnimationEventKind]: { kind: K } & AnimationEventMap[K] }`\[[`AnimationEventKind`](AnimationEventKind.md)\]
 
-Defined in: [animations/types.ts:38](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/animations/types.ts#L38)
+Defined in: [animations/types.ts:38](https://github.com/philbgarner/atomic-core/blob/54550262747609ee8b273468044fb8a6ec349eb1/src/lib/animations/types.ts#L38)

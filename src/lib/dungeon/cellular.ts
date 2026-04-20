@@ -5,6 +5,7 @@
 
 import * as THREE from "three";
 import type { DungeonOutputs } from "./bsp";
+import { buildColliderFlags } from "./colliderFlags";
 
 export type { DungeonOutputs };
 
@@ -55,6 +56,7 @@ export type CellularDungeonOutputs = DungeonOutputs & {
     wallOverlays: THREE.DataTexture;
     ceilingType: THREE.DataTexture;
     ceilingOverlays: THREE.DataTexture;
+    colliderFlags: THREE.DataTexture;
   };
   /** Floor cell closest to the centroid of the largest region - good spawn point. */
   startPos: GridPos;
@@ -320,6 +322,7 @@ export function generateCellularDungeon(options: CellularOptions): CellularDunge
   // Step 7: compute distanceToWall and ancillary masks
   const distanceToWall = computeDistanceToWall(solid, W, H);
   const hazards = new Uint8Array(W * H);
+  const colliderFlagsArr = buildColliderFlags(solid);
   const temperature = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
     if (solid[i] === 0) temperature[i] = 127;
@@ -352,6 +355,7 @@ export function generateCellularDungeon(options: CellularOptions): CellularDunge
       wallOverlays:    maskToDataTextureRGBA(wallOverlays,  W, H, "cellular_wall_overlays"),
       ceilingType:     maskToDataTextureR8(ceilingType,     W, H, "cellular_ceiling_type"),
       ceilingOverlays: maskToDataTextureRGBA(ceilingOverlays, W, H, "cellular_ceiling_overlays"),
+      colliderFlags:   maskToDataTextureR8(colliderFlagsArr, W, H, "cellular_collider_flags"),
     },
   };
 }

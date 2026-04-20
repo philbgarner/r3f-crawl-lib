@@ -36,6 +36,7 @@ import type { PlayerHandle, PlayerState } from "./player";
 import { createKeybindings } from "./keybindings";
 import type { KeybindingsOptions, KeybindingsHandle } from "./keybindings";
 import { makeRng } from "../utils/rng"
+import { isWalkableCell, isLightPassableCell } from "../dungeon/colliderFlags"
 import type { ActionTransport } from "../transport/types";
 import { createMissionSystem } from "../missions/missionSystem";
 import type { MissionsHandle } from "../missions/types";
@@ -303,6 +304,7 @@ type GameInternal = {
   // Set during generate()
   dungeonOutputs: BspDungeonOutputs | TiledMapOutputs | null;
   solidData: Uint8Array | null;
+  colliderFlagsData: Uint8Array | null;
   turnState: TurnSystemState | null;
   playerActorId: string;
 
@@ -358,6 +360,17 @@ function isSolid(
 ): boolean {
   if (x < 0 || y < 0 || x >= width || y >= height) return true;
   return (solidData[y * width + x] ?? 0) > 0;
+}
+
+function getCellFlags(
+  x: number,
+  y: number,
+  flagsData: Uint8Array,
+  width: number,
+  height: number,
+): number {
+  if (x < 0 || y < 0 || x >= width || y >= height) return 0x02; // IS_BLOCKED for OOB
+  return flagsData[y * width + x] ?? 0x02;
 }
 
 function syncEntityFromActor(entity: EntityBase, actor: PlayerActor | MonsterActor): void {
@@ -525,8 +538,8 @@ function makeApplyAction(
     }
 
     // Walkability check
-    if (!internal.solidData || !internal.dungeonOutputs) return state;
-    if (isSolid(nx, ny, internal.solidData, internal.dungeonOutputs.width, internal.dungeonOutputs.height)) {
+    if (!internal.colliderFlagsData || !internal.dungeonOutputs) return state;
+    if (!isWalkableCell(getCellFlags(nx, ny, internal.colliderFlagsData, internal.dungeonOutputs.width, internal.dungeonOutputs.height))) {
       return state;
     }
 
@@ -559,15 +572,15 @@ function makeApplyAction(
 const FOV_RADIUS = 12;
 
 function updateFovAndMinimap(internal: GameInternal): void {
-  if (!internal.minimapState || !internal.dungeonOutputs || !internal.solidData) return;
+  if (!internal.minimapState || !internal.dungeonOutputs || !internal.colliderFlagsData) return;
 
   const { width, height } = internal.dungeonOutputs;
-  const solid = internal.solidData;
+  const flags = internal.colliderFlagsData;
   const player = internal.playerState.entity;
 
   const fovMask = new Uint8Array(width * height);
   computeFov(player.x, player.z, {
-    isOpaque: (x, y) => isSolid(x, y, solid, width, height),
+    isOpaque: (x, y) => !isLightPassableCell(getCellFlags(x, y, flags, width, height)),
     visit: (x, y) => {
       if (x >= 0 && y >= 0 && x < width && y < height) {
         fovMask[y * width + x] = 1;
@@ -716,21 +729,21 @@ function makeTurnsHandle(internal: GameInternal, dungeonHandle: DungeonHandle): 
 
       if (!internal.turnState || !internal.dungeonOutputs) return;
 
-      const solid = internal.solidData!;
+      const flags = internal.colliderFlagsData!;
       const { width, height } = internal.dungeonOutputs;
       const dungOut = internal.dungeonOutputs;
 
       const onAnimEvent = (e: AnimationQueueEntry) => internal.animationRegistry._enqueue(e);
 
       const deps: TurnSystemDeps = {
-        isWalkable: (x, y) => !isSolid(x, y, solid, width, height),
+        isWalkable: (x, y) => isWalkableCell(getCellFlags(x, y, flags, width, height)),
         monsterDecide: (state, monsterId) =>
           decideChasePlayer(
             state,
             monsterId,
             dungOut,
-            (x, y) => !isSolid(x, y, solid, width, height),
-            (x, y) => isSolid(x, y, solid, width, height),
+            (x, y) => isWalkableCell(getCellFlags(x, y, flags, width, height)),
+            (x, y) => !isLightPassableCell(getCellFlags(x, y, flags, width, height)),
           ),
         computeCost: (actorId, a) =>
           defaultComputeCost(actorId, a, internal.turnState!.actors),
@@ -816,6 +829,7 @@ function runGenerate(
   // Three DataTexture stores image.data as Uint8ClampedArray; use the raw data.
   const rawSolid = dungeonOut.textures.solid.image.data as Uint8Array;
   internal.solidData = rawSolid;
+  internal.colliderFlagsData = dungeonOut.textures.colliderFlags.image.data as Uint8Array;
 
   // 2. Place player at start room centre if BSP
   const playerOpts = internal.options.player ?? {};
@@ -1034,14 +1048,14 @@ function runGenerate(
   // 10. Tick until player's first turn
   if (internal.turnState) {
     const deps: TurnSystemDeps = {
-      isWalkable: (x, y) => !isSolid(x, y, internal.solidData!, dungeonOut.width, dungeonOut.height),
+      isWalkable: (x, y) => isWalkableCell(getCellFlags(x, y, internal.colliderFlagsData!, dungeonOut.width, dungeonOut.height)),
       monsterDecide: (state, monsterId) =>
         decideChasePlayer(
           state,
           monsterId,
           dungeonOut,
-          (x, y) => !isSolid(x, y, internal.solidData!, dungeonOut.width, dungeonOut.height),
-          (x, y) => isSolid(x, y, internal.solidData!, dungeonOut.width, dungeonOut.height),
+          (x, y) => isWalkableCell(getCellFlags(x, y, internal.colliderFlagsData!, dungeonOut.width, dungeonOut.height)),
+          (x, y) => !isLightPassableCell(getCellFlags(x, y, internal.colliderFlagsData!, dungeonOut.width, dungeonOut.height)),
         ),
       computeCost: (actorId, a) =>
         defaultComputeCost(actorId, a, internal.turnState!.actors),
@@ -1192,6 +1206,7 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
     factions,
     dungeonOutputs: null,
     solidData: null,
+    colliderFlagsData: null,
     turnState: null,
     playerActorId,
     playerState,

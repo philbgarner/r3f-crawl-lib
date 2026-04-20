@@ -23,6 +23,47 @@ var AtomicCore = (function(exports, three) {
 	}) : target, mod));
 	//#endregion
 	three = __toESM(three, 1);
+	//#region src/lib/dungeon/colliderFlags.ts
+	/** Normal volitional movement (walk, run) is permitted on this cell. */
+	var IS_WALKABLE = 1;
+	/**
+	* No entity may enter this cell by any means — forced or voluntary.
+	* Solid walls carry this flag.  Pits do NOT: they can be entered via forced
+	* movement (e.g. a shove) even though they are not IS_WALKABLE.
+	*/
+	var IS_BLOCKED = 2;
+	/** Light and line-of-sight rays pass through this cell unobstructed. */
+	var IS_LIGHT_PASSABLE = 4;
+	/**
+	* Derive a collider-flags byte from a legacy `solid` mask value.
+	*   solid === 0  →  floor:  IS_WALKABLE | IS_LIGHT_PASSABLE  (0x05)
+	*   solid  > 0  →  wall:   IS_BLOCKED                        (0x02)
+	*/
+	function colliderFlagsFromSolid(solid) {
+		return solid === 0 ? 5 : 2;
+	}
+	/**
+	* Build a colliderFlags Uint8Array from a solid mask of the same length.
+	* This is the default derivation used by all dungeon generators.
+	*/
+	function buildColliderFlags(solidMask) {
+		const flags = new Uint8Array(solidMask.length);
+		for (let i = 0; i < solidMask.length; i++) flags[i] = colliderFlagsFromSolid(solidMask[i]);
+		return flags;
+	}
+	/** Returns true when the cell may be entered by normal walking movement. */
+	function isWalkableCell(flags) {
+		return (flags & 1) !== 0 && (flags & 2) === 0;
+	}
+	/** Returns true when no entity may enter this cell by any means. */
+	function isBlockedCell(flags) {
+		return (flags & 2) !== 0;
+	}
+	/** Returns true when light/LOS passes through this cell. */
+	function isLightPassableCell(flags) {
+		return (flags & 4) !== 0;
+	}
+	//#endregion
 	//#region src/lib/dungeon/bsp.ts
 	function hashSeedToUint32(seed) {
 		if (seed === void 0) return 305419896;
@@ -600,6 +641,7 @@ var AtomicCore = (function(exports, three) {
 		for (let i = 0; i < W * H; i++) if (solid[i] === 0) temperature[i] = 127;
 		const distanceToWall = computeDistanceToWall(solid, W, H);
 		const hazards = new Uint8Array(W * H);
+		const colliderFlagsArr = buildColliderFlags(solid);
 		return {
 			width: W,
 			height: H,
@@ -622,7 +664,8 @@ var AtomicCore = (function(exports, three) {
 				ceilingType: maskToDataTextureR8(ceilingType, W, H, "bsp_dungeon_ceiling_type"),
 				ceilingOverlays: maskToDataTextureRGBA(ceilingOverlays, W, H, "bsp_dungeon_ceiling_overlays"),
 				floorHeightOffset: maskToDataTextureR8(floorHeightOffset, W, H, "bsp_dungeon_floor_height_offset"),
-				ceilingHeightOffset: maskToDataTextureR8(ceilingHeightOffset, W, H, "bsp_dungeon_ceiling_height_offset")
+				ceilingHeightOffset: maskToDataTextureR8(ceilingHeightOffset, W, H, "bsp_dungeon_ceiling_height_offset"),
+				colliderFlags: maskToDataTextureR8(colliderFlagsArr, W, H, "bsp_dungeon_collider_flags")
 			}
 		};
 	}
@@ -705,6 +748,7 @@ var AtomicCore = (function(exports, three) {
 			tempArr = new Uint8Array(W * H);
 			for (let i = 0; i < W * H; i++) tempArr[i] = solidArr[i] === 0 ? 127 : 0;
 		}
+		const colliderFlagsArr = layerMap.colliderFlags ? buildR8(layerMap.colliderFlags) : buildColliderFlags(solidArr);
 		const textures = {
 			solid: r8Texture(solidArr, W, H, "solid"),
 			regionId: r8Texture(buildR8(layerMap.regionId), W, H, "regionId"),
@@ -716,7 +760,8 @@ var AtomicCore = (function(exports, three) {
 			wallType: r8Texture(buildR8(layerMap.wallType), W, H, "wallType"),
 			wallOverlays: rgbaTexture(buildRGBA(layerMap.wallOverlays), W, H, "wallOverlays"),
 			ceilingType: r8Texture(buildR8(layerMap.ceilingType), W, H, "ceilingType"),
-			ceilingOverlays: rgbaTexture(buildRGBA(layerMap.ceilingOverlays), W, H, "ceilingOverlays")
+			ceilingOverlays: rgbaTexture(buildRGBA(layerMap.ceilingOverlays), W, H, "ceilingOverlays"),
+			colliderFlags: r8Texture(colliderFlagsArr, W, H, "colliderFlags")
 		};
 		const objectPlacements = [];
 		if (objectLayer) {
@@ -1903,9 +1948,9 @@ var AtomicCore = (function(exports, three) {
 			connections: info.connections
 		};
 	}
-	function isSolid(x, y, solidData, width, height) {
-		if (x < 0 || y < 0 || x >= width || y >= height) return true;
-		return (solidData[y * width + x] ?? 0) > 0;
+	function getCellFlags(x, y, flagsData, width, height) {
+		if (x < 0 || y < 0 || x >= width || y >= height) return 2;
+		return flagsData[y * width + x] ?? 2;
 	}
 	function syncEntityFromActor(entity, actor) {
 		entity.x = actor.x;
@@ -2085,8 +2130,8 @@ var AtomicCore = (function(exports, three) {
 				}
 				return state;
 			}
-			if (!internal.solidData || !internal.dungeonOutputs) return state;
-			if (isSolid(nx, ny, internal.solidData, internal.dungeonOutputs.width, internal.dungeonOutputs.height)) return state;
+			if (!internal.colliderFlagsData || !internal.dungeonOutputs) return state;
+			if (!isWalkableCell(getCellFlags(nx, ny, internal.colliderFlagsData, internal.dungeonOutputs.width, internal.dungeonOutputs.height))) return state;
 			if (internal.decorations.some((d) => d.blocksMove && d.x === nx && d.z === ny)) return state;
 			if (actorId === internal.playerActorId) internal.events.emit("audio", {
 				name: "footstep",
@@ -2120,13 +2165,13 @@ var AtomicCore = (function(exports, three) {
 	}
 	var FOV_RADIUS = 12;
 	function updateFovAndMinimap(internal) {
-		if (!internal.minimapState || !internal.dungeonOutputs || !internal.solidData) return;
+		if (!internal.minimapState || !internal.dungeonOutputs || !internal.colliderFlagsData) return;
 		const { width, height } = internal.dungeonOutputs;
-		const solid = internal.solidData;
+		const flags = internal.colliderFlagsData;
 		const player = internal.playerState.entity;
 		const fovMask = new Uint8Array(width * height);
 		computeFov(player.x, player.z, {
-			isOpaque: (x, y) => isSolid(x, y, solid, width, height),
+			isOpaque: (x, y) => !isLightPassableCell(getCellFlags(x, y, flags, width, height)),
 			visit: (x, y) => {
 				if (x >= 0 && y >= 0 && x < width && y < height) fovMask[y * width + x] = 1;
 			},
@@ -2254,13 +2299,13 @@ var AtomicCore = (function(exports, three) {
 					return;
 				}
 				if (!internal.turnState || !internal.dungeonOutputs) return;
-				const solid = internal.solidData;
+				const flags = internal.colliderFlagsData;
 				const { width, height } = internal.dungeonOutputs;
 				const dungOut = internal.dungeonOutputs;
 				const onAnimEvent = (e) => internal.animationRegistry._enqueue(e);
 				const deps = {
-					isWalkable: (x, y) => !isSolid(x, y, solid, width, height),
-					monsterDecide: (state, monsterId) => decideChasePlayer(state, monsterId, dungOut, (x, y) => !isSolid(x, y, solid, width, height), (x, y) => isSolid(x, y, solid, width, height)),
+					isWalkable: (x, y) => isWalkableCell(getCellFlags(x, y, flags, width, height)),
+					monsterDecide: (state, monsterId) => decideChasePlayer(state, monsterId, dungOut, (x, y) => isWalkableCell(getCellFlags(x, y, flags, width, height)), (x, y) => !isLightPassableCell(getCellFlags(x, y, flags, width, height))),
 					computeCost: (actorId, a) => defaultComputeCost(actorId, a, internal.turnState.actors),
 					applyAction: makeApplyAction(internal, internal.options.combat, onAnimEvent),
 					onTimeAdvanced: ({ nextTime, prevTime, state }) => {
@@ -2324,6 +2369,7 @@ var AtomicCore = (function(exports, three) {
 		} else dungeonOut = generateBspDungeon(dungeonOpts);
 		internal.dungeonOutputs = dungeonOut;
 		internal.solidData = dungeonOut.textures.solid.image.data;
+		internal.colliderFlagsData = dungeonOut.textures.colliderFlags.image.data;
 		const playerOpts = internal.options.player ?? {};
 		let playerX = playerOpts.x ?? 1;
 		let playerZ = playerOpts.z ?? 1;
@@ -2509,8 +2555,8 @@ var AtomicCore = (function(exports, three) {
 		}
 		if (internal.turnState) {
 			const deps = {
-				isWalkable: (x, y) => !isSolid(x, y, internal.solidData, dungeonOut.width, dungeonOut.height),
-				monsterDecide: (state, monsterId) => decideChasePlayer(state, monsterId, dungeonOut, (x, y) => !isSolid(x, y, internal.solidData, dungeonOut.width, dungeonOut.height), (x, y) => isSolid(x, y, internal.solidData, dungeonOut.width, dungeonOut.height)),
+				isWalkable: (x, y) => isWalkableCell(getCellFlags(x, y, internal.colliderFlagsData, dungeonOut.width, dungeonOut.height)),
+				monsterDecide: (state, monsterId) => decideChasePlayer(state, monsterId, dungeonOut, (x, y) => isWalkableCell(getCellFlags(x, y, internal.colliderFlagsData, dungeonOut.width, dungeonOut.height)), (x, y) => !isLightPassableCell(getCellFlags(x, y, internal.colliderFlagsData, dungeonOut.width, dungeonOut.height))),
 				computeCost: (actorId, a) => defaultComputeCost(actorId, a, internal.turnState.actors),
 				applyAction: makeApplyAction(internal, internal.options.combat)
 			};
@@ -2592,6 +2638,7 @@ var AtomicCore = (function(exports, three) {
 			factions,
 			dungeonOutputs: null,
 			solidData: null,
+			colliderFlagsData: null,
 			turnState: null,
 			playerActorId,
 			playerState,
@@ -5357,6 +5404,9 @@ void main() {
 		return handle;
 	}
 	//#endregion
+	exports.IS_BLOCKED = IS_BLOCKED;
+	exports.IS_LIGHT_PASSABLE = IS_LIGHT_PASSABLE;
+	exports.IS_WALKABLE = IS_WALKABLE;
 	exports.THEMES = THEMES;
 	exports.THEME_KEYS = THEME_KEYS;
 	exports.attachDecorator = attachDecorator;
@@ -5364,6 +5414,8 @@ void main() {
 	exports.attachMinimap = attachMinimap;
 	exports.attachSpawner = attachSpawner;
 	exports.attachSurfacePainter = attachSurfacePainter;
+	exports.buildColliderFlags = buildColliderFlags;
+	exports.colliderFlagsFromSolid = colliderFlagsFromSolid;
 	exports.createDecoration = createDecoration;
 	exports.createDungeonRenderer = createDungeonRenderer;
 	exports.createEnemy = createEnemy;
@@ -5372,6 +5424,9 @@ void main() {
 	exports.createNpc = createNpc;
 	exports.createWebSocketTransport = createWebSocketTransport;
 	exports.getTheme = getTheme;
+	exports.isBlockedCell = isBlockedCell;
+	exports.isLightPassableCell = isLightPassableCell;
+	exports.isWalkableCell = isWalkableCell;
 	exports.loadMultiAtlas = loadMultiAtlas;
 	exports.loadTextureAtlas = loadTextureAtlas;
 	exports.loadTiledMap = loadTiledMap;

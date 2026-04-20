@@ -4,4 +4,4 @@
 
 > **TurnActionKind** = `"wait"` \| `"move"` \| `"attack"` \| `"interact"`
 
-Defined in: [turn/types.ts:59](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/turn/types.ts#L59)
+Defined in: [turn/types.ts:59](https://github.com/philbgarner/atomic-core/blob/54550262747609ee8b273468044fb8a6ec349eb1/src/lib/turn/types.ts#L59)

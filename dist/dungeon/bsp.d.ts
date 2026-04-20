@@ -68,6 +68,14 @@ export type DungeonOutputs = {
          * Not present for cellular/tiled dungeon outputs.
          */
         ceilingHeightOffset?: THREE.DataTexture;
+        /**
+         * Per-cell collision and LOS flags (R8). Bitwise combination of:
+         * - IS_WALKABLE (0x01): normal movement permitted
+         * - IS_BLOCKED  (0x02): no entity may enter by any means
+         * - IS_LIGHT_PASSABLE (0x04): LOS/light rays pass through
+         * Default values are derived from the `solid` texture.
+         */
+        colliderFlags: THREE.DataTexture;
     };
 };
 export type RoomRect = {

@@ -45,6 +45,7 @@ export type { AnimationEventKind, AnimationEventMap, AnimationQueueEntry, Animat
 // Type exports
 export type { GameEventMap, EventEmitter }           from './events/eventEmitter'
 export type { DungeonOutputs, BspDungeonOutputs }    from './dungeon/bsp'
+export { IS_WALKABLE, IS_BLOCKED, IS_LIGHT_PASSABLE, buildColliderFlags, colliderFlagsFromSolid, isWalkableCell, isBlockedCell, isLightPassableCell } from './dungeon/colliderFlags'
 export type { EntityBase, HiddenPassage }            from './entities/types'
 export type { DecorationEntity }                     from './entities/factory'
 export type { Item, InventorySlot }                  from './entities/inventory'

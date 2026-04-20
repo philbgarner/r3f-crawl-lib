@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { buildColliderFlags } from "./colliderFlags";
 
 // -----------------------------
 // Types
@@ -66,6 +67,14 @@ export type DungeonOutputs = {
      * Not present for cellular/tiled dungeon outputs.
      */
     ceilingHeightOffset?: THREE.DataTexture;
+    /**
+     * Per-cell collision and LOS flags (R8). Bitwise combination of:
+     * - IS_WALKABLE (0x01): normal movement permitted
+     * - IS_BLOCKED  (0x02): no entity may enter by any means
+     * - IS_LIGHT_PASSABLE (0x04): LOS/light rays pass through
+     * Default values are derived from the `solid` texture.
+     */
+    colliderFlags: THREE.DataTexture;
   };
 };
 
@@ -1009,6 +1018,7 @@ export function generateBspDungeon(
 
   const distanceToWall = computeDistanceToWall(solid, W, H);
   const hazards = new Uint8Array(W * H);
+  const colliderFlagsArr = buildColliderFlags(solid);
 
   return {
     width: W,
@@ -1033,6 +1043,7 @@ export function generateBspDungeon(
       ceilingOverlays: maskToDataTextureRGBA(ceilingOverlays, W, H, "bsp_dungeon_ceiling_overlays"),
       floorHeightOffset: maskToDataTextureR8(floorHeightOffset, W, H, "bsp_dungeon_floor_height_offset"),
       ceilingHeightOffset: maskToDataTextureR8(ceilingHeightOffset, W, H, "bsp_dungeon_ceiling_height_offset"),
+      colliderFlags: maskToDataTextureR8(colliderFlagsArr, W, H, "bsp_dungeon_collider_flags"),
     },
   };
 }

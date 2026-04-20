@@ -26,6 +26,7 @@
 - [AtlasSource](type-aliases/AtlasSource.md)
 - [BackgroundDef](type-aliases/BackgroundDef.md)
 - [BspDungeonOutputs](type-aliases/BspDungeonOutputs.md)
+- [CellInfo](type-aliases/CellInfo.md)
 - [DecorationEntity](type-aliases/DecorationEntity.md)
 - [DirectionFaceMap](type-aliases/DirectionFaceMap.md)
 - [DropTarget](type-aliases/DropTarget.md)
@@ -58,6 +59,7 @@
 - [PlayerNetState](type-aliases/PlayerNetState.md)
 - [ServerStateUpdate](type-aliases/ServerStateUpdate.md)
 - [StatDef](type-aliases/StatDef.md)
+- [SurfacePaintTarget](type-aliases/SurfacePaintTarget.md)
 - [TextureAtlasJson](type-aliases/TextureAtlasJson.md)
 - [ThemeDef](type-aliases/ThemeDef.md)
 - [ThemeSelector](type-aliases/ThemeSelector.md)
@@ -67,6 +69,9 @@
 
 ## Variables
 
+- [IS\_BLOCKED](variables/IS_BLOCKED.md)
+- [IS\_LIGHT\_PASSABLE](variables/IS_LIGHT_PASSABLE.md)
+- [IS\_WALKABLE](variables/IS_WALKABLE.md)
 - [THEME\_KEYS](variables/THEME_KEYS.md)
 - [THEMES](variables/THEMES.md)
 
@@ -77,6 +82,8 @@
 - [attachMinimap](functions/attachMinimap.md)
 - [attachSpawner](functions/attachSpawner.md)
 - [attachSurfacePainter](functions/attachSurfacePainter.md)
+- [buildColliderFlags](functions/buildColliderFlags.md)
+- [colliderFlagsFromSolid](functions/colliderFlagsFromSolid.md)
 - [createDecoration](functions/createDecoration.md)
 - [createDungeonRenderer](functions/createDungeonRenderer.md)
 - [createEnemy](functions/createEnemy.md)
@@ -85,6 +92,9 @@
 - [createNpc](functions/createNpc.md)
 - [createWebSocketTransport](functions/createWebSocketTransport.md)
 - [getTheme](functions/getTheme.md)
+- [isBlockedCell](functions/isBlockedCell.md)
+- [isLightPassableCell](functions/isLightPassableCell.md)
+- [isWalkableCell](functions/isWalkableCell.md)
 - [loadMultiAtlas](functions/loadMultiAtlas.md)
 - [loadTextureAtlas](functions/loadTextureAtlas.md)
 - [loadTiledMap](functions/loadTiledMap.md)

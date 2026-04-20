@@ -13,6 +13,11 @@ export interface TiledLayerMap {
     wallOverlays?: string;
     ceilingType?: string;
     ceilingOverlays?: string;
+    /**
+     * Optional: map a Tiled layer to the colliderFlags channel (R8).
+     * If omitted, flags are derived automatically from the `solid` channel.
+     */
+    colliderFlags?: string;
 }
 export interface TiledMapOptions {
     /**

@@ -7,6 +7,7 @@
 import * as THREE from "three";
 import type { DungeonOutputs } from "./bsp";
 import type { ObjectPlacement } from "../entities/types";
+import { buildColliderFlags } from "./colliderFlags";
 
 // ----------------------------------------------------------------
 // Tiled JSON types (minimal subset we need)
@@ -58,6 +59,11 @@ export interface TiledLayerMap {
   wallOverlays?: string;
   ceilingType?: string;
   ceilingOverlays?: string;
+  /**
+   * Optional: map a Tiled layer to the colliderFlags channel (R8).
+   * If omitted, flags are derived automatically from the `solid` channel.
+   */
+  colliderFlags?: string;
 }
 
 export interface TiledMapOptions {
@@ -189,6 +195,10 @@ export function loadTiledMap(tiledJson: unknown, options: TiledMapOptions): Tile
     }
   }
 
+  const colliderFlagsArr = layerMap.colliderFlags
+    ? buildR8(layerMap.colliderFlags)
+    : buildColliderFlags(solidArr);
+
   const textures: DungeonOutputs["textures"] = {
     solid:           r8Texture(solidArr,                         W, H, "solid"),
     regionId:        r8Texture(buildR8(layerMap.regionId),       W, H, "regionId"),
@@ -201,6 +211,7 @@ export function loadTiledMap(tiledJson: unknown, options: TiledMapOptions): Tile
     wallOverlays:    rgbaTexture(buildRGBA(layerMap.wallOverlays),    W, H, "wallOverlays"),
     ceilingType:     r8Texture(buildR8(layerMap.ceilingType),    W, H, "ceilingType"),
     ceilingOverlays: rgbaTexture(buildRGBA(layerMap.ceilingOverlays), W, H, "ceilingOverlays"),
+    colliderFlags:   r8Texture(colliderFlagsArr,                 W, H, "colliderFlags"),
   };
 
   // ----------------------------------------------------------------

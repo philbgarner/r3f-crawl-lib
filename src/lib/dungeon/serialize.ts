@@ -4,6 +4,7 @@
 
 import type { BspDungeonOptions, BspDungeonOutputs, RoomInfo } from "./bsp";
 import { generateBspDungeon } from "./bsp";
+import { buildColliderFlags } from "./colliderFlags";
 import * as THREE from "three";
 
 // --------------------------------
@@ -28,6 +29,7 @@ export type SerializedDungeon = {
   regionId: string;
   distanceToWall: string;
   hazards: string;
+  colliderFlags: string;
 };
 
 // --------------------------------
@@ -108,6 +110,7 @@ export function serializeDungeon(dungeon: BspDungeonOutputs): SerializedDungeon 
     regionId: uint8ToBase64(textureData(dungeon.textures.regionId)),
     distanceToWall: uint8ToBase64(textureData(dungeon.textures.distanceToWall)),
     hazards: uint8ToBase64(textureData(dungeon.textures.hazards)),
+    colliderFlags: uint8ToBase64(textureData(dungeon.textures.colliderFlags)),
   };
 }
 
@@ -152,6 +155,7 @@ export function deserializeDungeon(data: SerializedDungeon): BspDungeonOutputs {
       wallOverlays: makeDataTextureRGBA(new Uint8Array(4 * W * H), W, H, "bsp_dungeon_wall_overlays"),
       ceilingType: makeDataTexture(new Uint8Array(W * H), W, H, "bsp_dungeon_ceiling_type"),
       ceilingOverlays: makeDataTextureRGBA(new Uint8Array(4 * W * H), W, H, "bsp_dungeon_ceiling_overlays"),
+      colliderFlags: makeDataTexture(base64ToUint8(data.colliderFlags), W, H, "bsp_dungeon_collider_flags"),
     },
   };
 }
@@ -171,16 +175,19 @@ export function rehydrateDungeon(
   const regionIdData = base64ToUint8(data.regionId);
   const distanceToWallData = base64ToUint8(data.distanceToWall);
   const hazardsData = base64ToUint8(data.hazards);
+  const colliderFlagsData = base64ToUint8(data.colliderFlags);
 
   (fresh.textures.solid.image.data as Uint8Array).set(solidData);
   (fresh.textures.regionId.image.data as Uint8Array).set(regionIdData);
   (fresh.textures.distanceToWall.image.data as Uint8Array).set(distanceToWallData);
   (fresh.textures.hazards.image.data as Uint8Array).set(hazardsData);
+  (fresh.textures.colliderFlags.image.data as Uint8Array).set(colliderFlagsData);
 
   fresh.textures.solid.needsUpdate = true;
   fresh.textures.regionId.needsUpdate = true;
   fresh.textures.distanceToWall.needsUpdate = true;
   fresh.textures.hazards.needsUpdate = true;
+  fresh.textures.colliderFlags.needsUpdate = true;
 
   return fresh;
 }

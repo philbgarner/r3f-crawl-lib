@@ -4,7 +4,7 @@
 
 > **resolveTheme**(`selector`, `ctx`): [`ThemeDef`](../type-aliases/ThemeDef.md)
 
-Defined in: [dungeon/themes.ts:94](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/dungeon/themes.ts#L94)
+Defined in: [dungeon/themes.ts:94](https://github.com/philbgarner/atomic-core/blob/54550262747609ee8b273468044fb8a6ec349eb1/src/lib/dungeon/themes.ts#L94)
 
 Resolve a ThemeSelector to a theme name for a given room.
 Falls back to "dungeon" if the resolved key is not in the registry.

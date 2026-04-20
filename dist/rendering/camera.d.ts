@@ -21,6 +21,8 @@ export type CameraState = {
 };
 export type CameraOptions = {
     solidData: Uint8Array | null;
+    /** When provided, IS_WALKABLE flags drive movement collision instead of solidData. */
+    colliderFlagsData?: Uint8Array | null;
     width: number;
     height: number;
     startX: number;
@@ -39,6 +41,7 @@ export type Camera = {
     /** Call once per frame; dt is elapsed seconds. */
     update(dt: number): void;
     setSolidData(data: Uint8Array, width: number, height: number): void;
+    setColliderFlagsData(data: Uint8Array, width: number, height: number): void;
     /** Remove DOM event listeners. */
     destroy(): void;
 };
@@ -58,6 +61,8 @@ export type EotBKeybindings = {
 };
 export type EotBCameraOptions = {
     solidData: Uint8Array | null;
+    /** When provided, IS_WALKABLE flags drive movement collision instead of solidData. */
+    colliderFlagsData?: Uint8Array | null;
     width: number;
     height: number;
     startX: number;
@@ -98,6 +103,7 @@ export type EotBCamera = {
     /** Programmatically move by (dx, dz) world units, with lerp animation. */
     doMove(dx: number, dz: number): void;
     setSolidData(data: Uint8Array, width: number, height: number): void;
+    setColliderFlagsData(data: Uint8Array, width: number, height: number): void;
     setBlocked(blocked: boolean): void;
     setBlockedPositions(positions: {
         x: number;

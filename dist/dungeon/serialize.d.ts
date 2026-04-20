@@ -17,6 +17,7 @@ export type SerializedDungeon = {
     regionId: string;
     distanceToWall: string;
     hazards: string;
+    colliderFlags: string;
 };
 /**
  * Snapshot all mutable texture data into a JSON-safe object.

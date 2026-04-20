@@ -15,6 +15,8 @@
  * listeners when the camera is no longer needed.
  */
 
+import { isWalkableCell } from "../dungeon/colliderFlags";
+
 // ---------------------------------------------------------------------------
 // Shared types
 // ---------------------------------------------------------------------------
@@ -36,6 +38,8 @@ const MARGIN = 0.25;           // collision margin (world units)
 
 export type CameraOptions = {
   solidData: Uint8Array | null;
+  /** When provided, IS_WALKABLE flags drive movement collision instead of solidData. */
+  colliderFlagsData?: Uint8Array | null;
   width: number;
   height: number;
   startX: number;
@@ -55,35 +59,41 @@ export type Camera = {
   /** Call once per frame; dt is elapsed seconds. */
   update(dt: number): void;
   setSolidData(data: Uint8Array, width: number, height: number): void;
+  setColliderFlagsData(data: Uint8Array, width: number, height: number): void;
   /** Remove DOM event listeners. */
   destroy(): void;
 };
 
-function isSolid(
+function cellPassable(
   wx: number,
   wz: number,
-  solidData: Uint8Array,
+  solidData: Uint8Array | null,
+  colliderFlagsData: Uint8Array | null,
   width: number,
   height: number,
 ): boolean {
   const cx = Math.floor(wx);
   const cz = Math.floor(wz);
-  if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
-  return (solidData[cz * width + cx] ?? 0) > 0;
+  if (cx < 0 || cz < 0 || cx >= width || cz >= height) return false;
+  if (colliderFlagsData) {
+    return isWalkableCell(colliderFlagsData[cz * width + cx] ?? 0x02);
+  }
+  return (solidData?.[cz * width + cx] ?? 1) === 0;
 }
 
 function canOccupy(
   wx: number,
   wz: number,
-  solidData: Uint8Array,
+  solidData: Uint8Array | null,
+  colliderFlagsData: Uint8Array | null,
   width: number,
   height: number,
 ): boolean {
   return (
-    !isSolid(wx - MARGIN, wz - MARGIN, solidData, width, height) &&
-    !isSolid(wx + MARGIN, wz - MARGIN, solidData, width, height) &&
-    !isSolid(wx - MARGIN, wz + MARGIN, solidData, width, height) &&
-    !isSolid(wx + MARGIN, wz + MARGIN, solidData, width, height)
+    cellPassable(wx - MARGIN, wz - MARGIN, solidData, colliderFlagsData, width, height) &&
+    cellPassable(wx + MARGIN, wz - MARGIN, solidData, colliderFlagsData, width, height) &&
+    cellPassable(wx - MARGIN, wz + MARGIN, solidData, colliderFlagsData, width, height) &&
+    cellPassable(wx + MARGIN, wz + MARGIN, solidData, colliderFlagsData, width, height)
   );
 }
 
@@ -92,15 +102,16 @@ function tryMove(
   oz: number,
   dx: number,
   dz: number,
-  solidData: Uint8Array,
+  solidData: Uint8Array | null,
+  colliderFlagsData: Uint8Array | null,
   width: number,
   height: number,
 ): { x: number; z: number } {
   const nx = ox + dx;
   const nz = oz + dz;
-  if (canOccupy(nx, nz, solidData, width, height)) return { x: nx, z: nz };
-  if (canOccupy(nx, oz, solidData, width, height)) return { x: nx, z: oz };
-  if (canOccupy(ox, nz, solidData, width, height)) return { x: ox, z: nz };
+  if (canOccupy(nx, nz, solidData, colliderFlagsData, width, height)) return { x: nx, z: nz };
+  if (canOccupy(nx, oz, solidData, colliderFlagsData, width, height)) return { x: nx, z: oz };
+  if (canOccupy(ox, nz, solidData, colliderFlagsData, width, height)) return { x: ox, z: nz };
   return { x: ox, z: oz };
 }
 
@@ -110,6 +121,7 @@ function tryMove(
  */
 export function createCamera(options: CameraOptions): Camera {
   let { solidData, width, height } = options;
+  let colliderFlagsData = options.colliderFlagsData ?? null;
   let state: CameraState = { x: options.startX, z: options.startZ, yaw: 0 };
 
   const keys = new Set<string>();
@@ -165,7 +177,7 @@ export function createCamera(options: CameraOptions): Camera {
       }
 
       if (moveX !== 0 || moveZ !== 0 || turnDelta !== 0) {
-        const { x: nx, z: nz } = tryMove(x, z, moveX, moveZ, solid, width, height);
+        const { x: nx, z: nz } = tryMove(x, z, moveX, moveZ, solid, colliderFlagsData, width, height);
         state = { x: nx, z: nz, yaw: yaw + turnDelta };
       }
     },
@@ -175,6 +187,12 @@ export function createCamera(options: CameraOptions): Camera {
       width = w;
       height = h;
       state = { x: options.startX, z: options.startZ, yaw: 0 };
+    },
+
+    setColliderFlagsData(data: Uint8Array, w: number, h: number) {
+      colliderFlagsData = data;
+      width = w;
+      height = h;
     },
 
     destroy() {
@@ -205,6 +223,8 @@ export type EotBKeybindings = {
 
 export type EotBCameraOptions = {
   solidData: Uint8Array | null;
+  /** When provided, IS_WALKABLE flags drive movement collision instead of solidData. */
+  colliderFlagsData?: Uint8Array | null;
   width: number;
   height: number;
   startX: number;
@@ -244,6 +264,7 @@ export type EotBCamera = {
   /** Programmatically move by (dx, dz) world units, with lerp animation. */
   doMove(dx: number, dz: number): void;
   setSolidData(data: Uint8Array, width: number, height: number): void;
+  setColliderFlagsData(data: Uint8Array, width: number, height: number): void;
   setBlocked(blocked: boolean): void;
   setBlockedPositions(positions: { x: number; z: number }[]): void;
   /** Remove DOM event listeners. */
@@ -260,6 +281,7 @@ export function createEotBCamera(options: EotBCameraOptions): EotBCamera {
   const startYaw = options.startYaw ?? 0;
 
   let solidData = options.solidData;
+  let colliderFlagsData = options.colliderFlagsData ?? null;
   let width = options.width;
   let height = options.height;
   let blocked = options.blocked ?? false;
@@ -283,8 +305,12 @@ export function createEotBCamera(options: EotBCameraOptions): EotBCamera {
   function walkable(cx: number, cz: number): boolean {
     if (cx < 0 || cz < 0 || cx >= width || cz >= height) return false;
     if (canPhaseWalls) return true;
-    if (!solidData) return false;
-    if (solidData[cz * width + cx] !== 0) return false;
+    if (colliderFlagsData) {
+      if (!isWalkableCell(colliderFlagsData[cz * width + cx] ?? 0x02)) return false;
+    } else {
+      if (!solidData) return false;
+      if (solidData[cz * width + cx] !== 0) return false;
+    }
     return !blockedPositions.some((p) => p.x === cx && p.z === cz);
   }
 
@@ -412,6 +438,12 @@ export function createEotBCamera(options: EotBCameraOptions): EotBCamera {
 
     setSolidData(data: Uint8Array, w: number, h: number) {
       solidData = data;
+      width = w;
+      height = h;
+    },
+
+    setColliderFlagsData(data: Uint8Array, w: number, h: number) {
+      colliderFlagsData = data;
       width = w;
       height = h;
     },

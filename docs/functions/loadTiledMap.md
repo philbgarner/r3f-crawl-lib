@@ -4,7 +4,7 @@
 
 > **loadTiledMap**(`tiledJson`, `options`): `TiledMapOutputs`
 
-Defined in: [dungeon/tiled.ts:134](https://github.com/philbgarner/atomic-core/blob/c5af815606b0ff4e676f4a6760a775a53993493f/src/lib/dungeon/tiled.ts#L134)
+Defined in: [dungeon/tiled.ts:140](https://github.com/philbgarner/atomic-core/blob/54550262747609ee8b273468044fb8a6ec349eb1/src/lib/dungeon/tiled.ts#L140)
 
 Convert a parsed Tiled JSON export to `TiledMapOutputs` (a `DungeonOutputs`
 superset that also carries the parsed object placements).
