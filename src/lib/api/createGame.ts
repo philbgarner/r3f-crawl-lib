@@ -97,10 +97,11 @@ export type DungeonHandle = {
   decorations: DecorationList;
   passages: PassageList;
   passageNear(x: number, z: number, radius?: number): HiddenPassage | null;
-  paint(x: number, z: number, layers: string[]): void;
+  /** Apply per-surface overlay tile names to a cell. */
+  paint(x: number, z: number, layers: SurfacePaintTarget): void;
   unpaint(x: number, z: number): void;
   /** Read-only view of the current per-cell surface paint map. Keys are "x,z" strings. */
-  readonly paintMap: ReadonlyMap<string, string[]>;
+  readonly paintMap: ReadonlyMap<string, SurfacePaintTarget>;
 };
 
 // ---------------------------------------------------------------------------
@@ -159,7 +160,7 @@ export type PlaceAPI = {
   npc(x: number, z: number, type: string, opts?: Record<string, unknown>): void;
   enemy(x: number, z: number, type: string, opts?: Record<string, unknown>): void;
   decoration(x: number, z: number, type: string, opts?: Record<string, unknown>): void;
-  surface(x: number, z: number, layers: string[]): void;
+  surface(x: number, z: number, layers: SurfacePaintTarget): void;
 };
 
 export type DungeonOptions =
@@ -272,12 +273,22 @@ type DecoratorCallback = (ctx: {
   y: number;
 }) => DecorationEntity | DecorationEntity[] | null | undefined;
 
+/** Per-surface overlay tile names for a single cell. Each key is optional. */
+export type SurfacePaintTarget = {
+  /** Tile names to overlay on the floor face of this cell. Up to 4. */
+  floor?: string[];
+  /** Tile names to overlay on wall faces of this cell. Up to 4. */
+  wall?: string[];
+  /** Tile names to overlay on the ceiling face of this cell. Up to 4. */
+  ceil?: string[];
+};
+
 type SurfacePainterCallback = (ctx: {
   dungeon: DungeonHandle;
   roomId: number;
   x: number;
   y: number;
-}) => string[] | null | undefined;
+}) => SurfacePaintTarget | null | undefined;
 
 // ---------------------------------------------------------------------------
 // Internal state (shared mutable bag)
@@ -305,8 +316,8 @@ type GameInternal = {
   // Decorations
   decorations: DecorationEntity[];
 
-  // Surface paint map: "${x},${z}" -> layer names[]
-  paintMap: Map<string, string[]>;
+  // Surface paint map: "${x},${z}" -> per-surface overlay tile names
+  paintMap: Map<string, SurfacePaintTarget>;
 
   // Passages
   passages: HiddenPassage[];
@@ -643,19 +654,21 @@ function makeDungeonHandle(internal: GameInternal): DungeonHandle {
       return best;
     },
 
-    paint(x: number, z: number, layers: string[]) {
-      internal.paintMap.set(`${x},${z}`, layers);
-      writePaintToOverlayTexture(internal, x, z, layers);
-      internal.events.emit('cell-paint', { x, z, layers });
+    paint(x: number, z: number, layers: SurfacePaintTarget) {
+      const existing = internal.paintMap.get(`${x},${z}`) ?? {};
+      const merged: SurfacePaintTarget = { ...existing, ...layers };
+      internal.paintMap.set(`${x},${z}`, merged);
+      writePaintToOverlayTexture(internal, x, z);
+      internal.events.emit('cell-paint', { x, z, ...layers });
     },
 
     unpaint(x: number, z: number) {
       internal.paintMap.delete(`${x},${z}`);
-      writePaintToOverlayTexture(internal, x, z, []);
-      internal.events.emit('cell-paint', { x, z, layers: [] });
+      writePaintToOverlayTexture(internal, x, z);
+      internal.events.emit('cell-paint', { x, z, floor: [], wall: [], ceil: [] });
     },
 
-    get paintMap(): ReadonlyMap<string, string[]> {
+    get paintMap(): ReadonlyMap<string, SurfacePaintTarget> {
       return internal.paintMap;
     },
   };
@@ -669,7 +682,6 @@ function writePaintToOverlayTexture(
   internal: GameInternal,
   x: number,
   z: number,
-  _layers: string[],
 ): void {
   const dungeon = internal.dungeonOutputs;
   if (!dungeon) return;
@@ -947,7 +959,7 @@ function runGenerate(
           scale: (opts?.scale as number) ?? 1,
         } as DecorationEntity);
       },
-      surface(x, z, layers) {
+      surface(x, z, layers: SurfacePaintTarget) {
         dungeonHandle.paint(x, z, layers);
       },
     };
@@ -1012,7 +1024,7 @@ function runGenerate(
           : 0;
 
         const layers = internal.surfacePainterCb({ dungeon: dungeonHandle, roomId, x, y });
-        if (layers && layers.length > 0) {
+        if (layers && (layers.floor?.length || layers.wall?.length || layers.ceil?.length)) {
           dungeonHandle.paint(x, y, layers);
         }
       }

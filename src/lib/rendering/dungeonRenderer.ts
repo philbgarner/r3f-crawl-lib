@@ -463,62 +463,100 @@ export function createDungeonRenderer(
     tileUvLookupTex.needsUpdate = true;
   }
 
-  // W×H Uint8 RGBA texture: each channel = overlay slot ID (0 = none). Rebuilt per generate().
+  // Per-surface W×H Uint8 RGBA overlay textures. Rebuilt after each generate().
+  // Each channel = one overlay slot tile ID (0 = none). Max 4 slots per surface per cell.
   const _defaultOverlayTex = new THREE.DataTexture(new Uint8Array(4), 1, 1, THREE.RGBAFormat);
   _defaultOverlayTex.magFilter = THREE.NearestFilter;
   _defaultOverlayTex.minFilter = THREE.NearestFilter;
   _defaultOverlayTex.needsUpdate = true;
-  let overlayLookupTex: THREE.DataTexture = _defaultOverlayTex;
-  let overlayLookupData: Uint8Array = new Uint8Array(4);
 
-  /** Rebuild the W×H overlay lookup texture from the current paintMap. */
+  type OverlaySurface = { tex: THREE.DataTexture; data: Uint8Array };
+  const defSurf: OverlaySurface = { tex: _defaultOverlayTex, data: new Uint8Array(4) };
+
+  let overlayFloor: OverlaySurface = defSurf;
+  let overlayWall:  OverlaySurface = defSurf;
+  let overlayCeil:  OverlaySurface = defSurf;
+
+  function makeOverlayTex(data: Uint8Array, width: number, height: number): THREE.DataTexture {
+    const t = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    t.flipY = false;
+    t.needsUpdate = true;
+    return t;
+  }
+
+  /** Rebuild all three per-surface overlay textures from the current paintMap. */
   function rebuildOverlayTexture(width: number, height: number): void {
     if (!resolver) return;
-    const data = new Uint8Array(width * height * 4);
-    for (const [key, layers] of game.dungeon.paintMap) {
+    const n = width * height * 4;
+    const fd = new Uint8Array(n);
+    const wd = new Uint8Array(n);
+    const cd = new Uint8Array(n);
+
+    for (const [key, paint] of game.dungeon.paintMap) {
       const comma = key.indexOf(',');
       const x = parseInt(key.slice(0, comma), 10);
       const z = parseInt(key.slice(comma + 1), 10);
       if (x < 0 || z < 0 || x >= width || z >= height) continue;
       const idx = (z * width + x) * 4;
-      for (let i = 0; i < Math.min(layers.length, 4); i++) {
-        data[idx + i] = resolver(layers[i]!) & 0xFF;
-      }
+      const write = (arr: Uint8Array, layers: string[] | undefined) => {
+        if (!layers) return;
+        for (let i = 0; i < Math.min(layers.length, 4); i++)
+          arr[idx + i] = resolver!(layers[i]!) & 0xFF;
+      };
+      write(fd, paint.floor);
+      write(wd, paint.wall);
+      write(cd, paint.ceil);
     }
-    if (overlayLookupTex !== _defaultOverlayTex) overlayLookupTex.dispose();
-    overlayLookupData = data;
-    overlayLookupTex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
-    overlayLookupTex.magFilter = THREE.NearestFilter;
-    overlayLookupTex.minFilter = THREE.NearestFilter;
-    overlayLookupTex.flipY = false;
-    overlayLookupTex.needsUpdate = true;
+
+    if (overlayFloor !== defSurf) overlayFloor.tex.dispose();
+    if (overlayWall  !== defSurf) overlayWall.tex.dispose();
+    if (overlayCeil  !== defSurf) overlayCeil.tex.dispose();
+
+    overlayFloor = { tex: makeOverlayTex(fd, width, height), data: fd };
+    overlayWall  = { tex: makeOverlayTex(wd, width, height), data: wd };
+    overlayCeil  = { tex: makeOverlayTex(cd, width, height), data: cd };
   }
 
-  /** Update one cell in the overlay lookup texture in-place (for dynamic paint). */
-  function updateOverlayCell(x: number, z: number, layers: string[]): void {
+  /** Update one cell in-place across all three overlay textures. */
+  function updateOverlayCell(
+    x: number, z: number,
+    paint: { floor?: string[]; wall?: string[]; ceil?: string[] },
+  ): void {
     if (!resolver) return;
     const outputs = game.dungeon.outputs;
-    if (!outputs || overlayLookupTex === _defaultOverlayTex) return;
+    if (!outputs || overlayFloor === defSurf) return;
     const { width, height } = outputs;
     if (x < 0 || z < 0 || x >= width || z >= height) return;
     const idx = (z * width + x) * 4;
-    overlayLookupData[idx] = overlayLookupData[idx + 1] = overlayLookupData[idx + 2] = overlayLookupData[idx + 3] = 0;
-    for (let i = 0; i < Math.min(layers.length, 4); i++) {
-      overlayLookupData[idx + i] = resolver(layers[i]!) & 0xFF;
-    }
-    overlayLookupTex.needsUpdate = true;
+    const write = (surf: OverlaySurface, layers: string[] | undefined) => {
+      if (layers === undefined) return;
+      surf.data[idx] = surf.data[idx+1] = surf.data[idx+2] = surf.data[idx+3] = 0;
+      for (let i = 0; i < Math.min(layers.length, 4); i++)
+        surf.data[idx + i] = resolver!(layers[i]!) & 0xFF;
+      surf.tex.needsUpdate = true;
+    };
+    write(overlayFloor, paint.floor);
+    write(overlayWall,  paint.wall);
+    write(overlayCeil,  paint.ceil);
   }
 
-  /** Push current overlay textures into all atlas materials. */
+  /** Push per-surface overlay textures into their respective atlas materials. */
   function syncOverlayUniforms(width: number, height: number): void {
-    for (const mat of [floorMat, ceilMat, wallMat, ceilEdgeMat]) {
-      if (!(mat instanceof THREE.ShaderMaterial)) continue;
+    const size = new THREE.Vector2(width, height);
+    const set = (mat: THREE.Material, overlayTex: THREE.DataTexture) => {
+      if (!(mat instanceof THREE.ShaderMaterial)) return;
       const u = mat.uniforms;
-      if (u['uOverlayLookup']) u['uOverlayLookup'].value = overlayLookupTex;
+      if (u['uOverlayLookup']) u['uOverlayLookup'].value = overlayTex;
       if (u['uTileUvLookup'])  u['uTileUvLookup'].value  = tileUvLookupTex;
       if (u['uTileUvCount'])   u['uTileUvCount'].value   = tileUvCount;
-      if (u['uDungeonSize'])   u['uDungeonSize'].value   = new THREE.Vector2(width, height);
-    }
+      if (u['uDungeonSize'])   u['uDungeonSize'].value   = size;
+    };
+    set(floorMat,    overlayFloor.tex);
+    set(wallMat,     overlayWall.tex);
+    set(ceilMat,     overlayCeil.tex);
+    set(ceilEdgeMat, overlayCeil.tex);
   }
 
   function makeAtlasMaterial(): THREE.ShaderMaterial {
@@ -533,7 +571,7 @@ export function createDungeonRenderer(
         fogNear,
         fogFar,
         ...(tileUvLookupTex ? { tileUvLookup: tileUvLookupTex, tileUvCount } : {}),
-        overlayLookup: overlayLookupTex,
+        overlayLookup: overlayFloor.tex,
         dungeonSize: new THREE.Vector2(1, 1),
       }),
       side: THREE.FrontSide,
@@ -1376,8 +1414,8 @@ export function createDungeonRenderer(
   }
 
   // ── Surface painter — dynamic cell-paint events ───────────────────────────
-  function onCellPaint({ x, z, layers }: { x: number; z: number; layers: string[] }) {
-    updateOverlayCell(x, z, layers);
+  function onCellPaint(e: { x: number; z: number; floor?: string[]; wall?: string[]; ceil?: string[] }) {
+    updateOverlayCell(e.x, e.z, e);
   }
   game.events.on("cell-paint", onCellPaint);
 
@@ -1506,11 +1544,10 @@ export function createDungeonRenderer(
           entry.holder.mesh = null;
         }
       }
-      // Reset overlay texture so it is rebuilt for the new dungeon dimensions.
-      if (overlayLookupTex !== _defaultOverlayTex) {
-        overlayLookupTex.dispose();
-        overlayLookupTex = _defaultOverlayTex;
-      }
+      // Reset overlay textures so they are rebuilt for the new dungeon dimensions.
+      if (overlayFloor !== defSurf) { overlayFloor.tex.dispose(); overlayFloor = defSurf; }
+      if (overlayWall  !== defSurf) { overlayWall.tex.dispose();  overlayWall  = defSurf; }
+      if (overlayCeil  !== defSurf) { overlayCeil.tex.dispose();  overlayCeil  = defSurf; }
       dungeonBuilt = false;
       buildDungeon();
     },
@@ -1527,7 +1564,9 @@ export function createDungeonRenderer(
       for (const handle of billboardMap.values()) handle.dispose();
       sharedAtlasTex?.dispose();
       tileUvLookupTex?.dispose();
-      if (overlayLookupTex !== _defaultOverlayTex) overlayLookupTex.dispose();
+      if (overlayFloor !== defSurf) overlayFloor.tex.dispose();
+      if (overlayWall  !== defSurf) overlayWall.tex.dispose();
+      if (overlayCeil  !== defSurf) overlayCeil.tex.dispose();
       _defaultOverlayTex.dispose();
       glRenderer.dispose();
       canvas.remove();

@@ -10,6 +10,7 @@ export {
   attachSurfacePainter,
   attachKeybindings,
 } from './api/createGame'
+export type { SurfacePaintTarget } from './api/createGame'
 
 export { createNpc, createEnemy, createDecoration } from './entities/factory'
 export { createItem }                                from './entities/inventory'

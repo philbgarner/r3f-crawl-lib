@@ -58,11 +58,11 @@ export interface GameEventMap {
     playerId: string;
   };
   /**
-   * A cell's surface paint changed. `layers` is the new layer name array;
-   * an empty array means the cell was unpainted.
+   * A cell's surface paint changed. Each surface key holds the new overlay
+   * tile-name array for that surface (absent = unchanged, empty = unpainted).
    * Emitted by `dungeon.paint()` and `dungeon.unpaint()`.
    */
-  'cell-paint': { x: number; z: number; layers: string[] };
+  'cell-paint': { x: number; z: number; floor?: string[]; wall?: string[]; ceil?: string[] };
 }
 
 // ---------------------------------------------------------------------------
