@@ -4074,6 +4074,41 @@ void main() {
 					const nfE = openFloorVal(cx + 1, cz);
 					if (nfE !== null && nfE < floorVal) addFloorSkirt(nfE, (cx + 1) * tileSize, wz, HALF_PI, "east");
 				}
+				if (floorVal > 128) {
+					const floorY = (floorVal - 128) * offsetStep;
+					const gapH = floorY;
+					function addWallFloorSkirt(mx, mz, ry, dir) {
+						const s = spec(wallTiles, dir, wallId);
+						const fullPanels = Math.floor(gapH / tileSize);
+						const rem = gapH - fullPanels * tileSize;
+						for (let i = 0; i < fullPanels; i++) {
+							const midY = floorY - i * tileSize - tileSize / 2;
+							wallSkirtEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, tileSize));
+							wallSkirtRects.push(getUvRect(resolveTile(s.tile, resolver)));
+							wallSkirtRots.push(s.rotation ?? 0);
+							wallSkirtHeightScales.push(1);
+							wallSkirtCellMap.push({
+								cx,
+								cz
+							});
+						}
+						if (rem > .001) {
+							const midY = floorY - fullPanels * tileSize - rem / 2;
+							wallSkirtEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, rem));
+							wallSkirtRects.push(getUvRect(resolveTile(s.tile, resolver)));
+							wallSkirtRots.push(s.rotation ?? 0);
+							wallSkirtHeightScales.push(rem / tileSize);
+							wallSkirtCellMap.push({
+								cx,
+								cz
+							});
+						}
+					}
+					if (isSolid(cx, cz - 1)) addWallFloorSkirt(wx, cz * tileSize, 0, "north");
+					if (isSolid(cx, cz + 1)) addWallFloorSkirt(wx, (cz + 1) * tileSize, Math.PI, "south");
+					if (isSolid(cx - 1, cz)) addWallFloorSkirt(cx * tileSize, wz, HALF_PI, "west");
+					if (isSolid(cx + 1, cz)) addWallFloorSkirt((cx + 1) * tileSize, wz, -HALF_PI, "east");
+				}
 				const yCurrent = ceilingH - (ceilVal - 128) * offsetStep;
 				function addCeilSkirt(ncVal, mx, mz, ry, dir) {
 					const s = spec(ceilSkirtTiles, dir, ceilId);
