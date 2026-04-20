@@ -4074,15 +4074,14 @@ void main() {
 					const nfE = openFloorVal(cx + 1, cz);
 					if (nfE !== null && nfE < floorVal) addFloorSkirt(nfE, (cx + 1) * tileSize, wz, HALF_PI, "east");
 				}
-				if (floorVal > 128) {
-					const floorY = (floorVal - 128) * offsetStep;
-					const gapH = floorY;
+				if (floorVal < 128 && floorVal !== 0) {
+					const gapH = (128 - floorVal) * offsetStep;
 					function addWallFloorSkirt(mx, mz, ry, dir) {
 						const s = spec(wallTiles, dir, wallId);
 						const fullPanels = Math.floor(gapH / tileSize);
 						const rem = gapH - fullPanels * tileSize;
 						for (let i = 0; i < fullPanels; i++) {
-							const midY = floorY - i * tileSize - tileSize / 2;
+							const midY = -(i * tileSize + tileSize / 2);
 							wallSkirtEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, tileSize));
 							wallSkirtRects.push(getUvRect(resolveTile(s.tile, resolver)));
 							wallSkirtRots.push(s.rotation ?? 0);
@@ -4093,7 +4092,7 @@ void main() {
 							});
 						}
 						if (rem > .001) {
-							const midY = floorY - fullPanels * tileSize - rem / 2;
+							const midY = -(fullPanels * tileSize + rem / 2);
 							wallSkirtEdges.push(makeFaceMatrix(mx, midY, mz, 0, ry, 0, tileSize, rem));
 							wallSkirtRects.push(getUvRect(resolveTile(s.tile, resolver)));
 							wallSkirtRots.push(s.rotation ?? 0);
