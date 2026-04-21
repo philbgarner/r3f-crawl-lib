@@ -4,12 +4,14 @@
 
 > **ActionDef** = `object`
 
-Defined in: [ui/inventoryDialog.ts:41](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L41)
+Defined in: [ui/inventoryDialog.ts:58](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L58)
+
+A button shown in the right-column action strip.
 
 ## Properties
 
-| Property | Type | Defined in |
-| ------ | ------ | ------ |
-| <a id="icon"></a> `icon?` | `string` | [ui/inventoryDialog.ts:43](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L43) |
-| <a id="label"></a> `label` | `string` | [ui/inventoryDialog.ts:42](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L42) |
-| <a id="onclick"></a> `onClick` | (`handle`) => `void` | [ui/inventoryDialog.ts:44](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L44) |
+| Property | Type | Description | Defined in |
+| ------ | ------ | ------ | ------ |
+| <a id="icon"></a> `icon?` | `string` | Optional icon URL displayed to the left of the label. | [ui/inventoryDialog.ts:62](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L62) |
+| <a id="label"></a> `label` | `string` | Button label text. | [ui/inventoryDialog.ts:60](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L60) |
+| <a id="onclick"></a> `onClick` | (`handle`) => `void` | Called when the button is clicked, receiving the live inventory handle. | [ui/inventoryDialog.ts:64](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L64) |

@@ -4,4 +4,6 @@
 
 > **DropTarget** = [`InventorySlot`](../interfaces/InventorySlot.md) \| \{ `equipKey`: `string`; \}
 
-Defined in: [ui/inventoryDialog.ts:58](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L58)
+Defined in: [ui/inventoryDialog.ts:89](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L89)
+
+The destination of a drag-and-drop operation — either an inventory slot or an equip slot.

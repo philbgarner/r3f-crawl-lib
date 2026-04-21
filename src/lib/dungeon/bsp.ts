@@ -76,15 +76,15 @@ export type DungeonOutputs = {
      */
     colliderFlags: THREE.DataTexture;
     /**
-     * Per-cell floor skirt tile overrides (RGBA). R=north, G=south, B=east, A=west.
-     * Value 0 = use renderer fallback. 1–255 = explicit tile ID.
-     * For edge skirts, replaces the base tile. For wall-adjacent skirts, composited on top.
+     * Per-cell floor skirt overlay slots (RGBA). Same encoding as `overlays`:
+     * R = slot 1, G = slot 2, B = slot 3, A = slot 4. Value 0 = empty slot.
+     * All non-zero slots are composited on top of the skirt base tile in the fragment shader.
      */
     floorSkirtType: THREE.DataTexture;
     /**
-     * Per-cell ceiling skirt tile overrides (RGBA). R=north, G=south, B=east, A=west.
-     * Value 0 = use renderer fallback. 1–255 = explicit tile ID.
-     * For edge skirts, replaces the base tile. For wall-adjacent skirts, composited on top.
+     * Per-cell ceiling skirt overlay slots (RGBA). Same encoding as `ceilingOverlays`:
+     * R = slot 1, G = slot 2, B = slot 3, A = slot 4. Value 0 = empty slot.
+     * All non-zero slots are composited on top of the skirt base tile in the fragment shader.
      */
     ceilSkirtType: THREE.DataTexture;
   };
@@ -1065,47 +1065,43 @@ export function generateBspDungeon(
 }
 
 // ---------------------------------------------------------------------------
-// Per-cell skirt tile helpers
+// Per-cell skirt overlay helpers
 // ---------------------------------------------------------------------------
 
-/** Direction-to-RGBA-channel mapping used by floorSkirtType / ceilSkirtType textures. */
-const SKIRT_CHANNEL = { north: 0, south: 1, east: 2, west: 3 } as const;
-
 /**
- * Write per-cell floor skirt tile IDs for one or more directions.
- * Only directions present in `map` are written; absent directions are unchanged.
- * Call after modifying to trigger a renderer refresh (texture.needsUpdate is set automatically).
+ * Write floor skirt overlay tile IDs for a single cell.
+ * `tiles` is an array of up to 4 numeric tile IDs corresponding to RGBA slots 1–4.
+ * Missing entries are left unchanged; pass 0 to clear a slot.
  */
 export function setFloorSkirtTiles(
   outputs: DungeonOutputs,
   cx: number,
   cz: number,
-  map: { north?: number; south?: number; east?: number; west?: number },
+  tiles: number[],
 ): void {
   const data = outputs.textures.floorSkirtType.image.data as Uint8Array;
   const base = (cz * outputs.width + cx) * 4;
-  if (map.north !== undefined) data[base + SKIRT_CHANNEL.north] = map.north;
-  if (map.south !== undefined) data[base + SKIRT_CHANNEL.south] = map.south;
-  if (map.east  !== undefined) data[base + SKIRT_CHANNEL.east]  = map.east;
-  if (map.west  !== undefined) data[base + SKIRT_CHANNEL.west]  = map.west;
+  for (let i = 0; i < 4 && i < tiles.length; i++) {
+    if (tiles[i] !== undefined) data[base + i] = tiles[i]!;
+  }
   outputs.textures.floorSkirtType.needsUpdate = true;
 }
 
 /**
- * Write per-cell ceiling skirt tile IDs for one or more directions.
- * Only directions present in `map` are written; absent directions are unchanged.
+ * Write ceiling skirt overlay tile IDs for a single cell.
+ * `tiles` is an array of up to 4 numeric tile IDs corresponding to RGBA slots 1–4.
+ * Missing entries are left unchanged; pass 0 to clear a slot.
  */
 export function setCeilSkirtTiles(
   outputs: DungeonOutputs,
   cx: number,
   cz: number,
-  map: { north?: number; south?: number; east?: number; west?: number },
+  tiles: number[],
 ): void {
   const data = outputs.textures.ceilSkirtType.image.data as Uint8Array;
   const base = (cz * outputs.width + cx) * 4;
-  if (map.north !== undefined) data[base + SKIRT_CHANNEL.north] = map.north;
-  if (map.south !== undefined) data[base + SKIRT_CHANNEL.south] = map.south;
-  if (map.east  !== undefined) data[base + SKIRT_CHANNEL.east]  = map.east;
-  if (map.west  !== undefined) data[base + SKIRT_CHANNEL.west]  = map.west;
+  for (let i = 0; i < 4 && i < tiles.length; i++) {
+    if (tiles[i] !== undefined) data[base + i] = tiles[i]!;
+  }
   outputs.textures.ceilSkirtType.needsUpdate = true;
 }

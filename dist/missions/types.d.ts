@@ -1,6 +1,7 @@
 import { EventEmitter } from '../events/eventEmitter';
 import { PlayerHandle } from '../api/player';
 import { DungeonHandle } from '../api/createGame';
+/** Lifecycle state of a mission. */
 export type MissionStatus = 'active' | 'complete' | 'failed';
 export type Mission = {
     /** Developer-assigned unique identifier. */

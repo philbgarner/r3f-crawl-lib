@@ -2,13 +2,13 @@
 
 # Function: setFloorSkirtTiles()
 
-> **setFloorSkirtTiles**(`outputs`, `cx`, `cz`, `map`): `void`
+> **setFloorSkirtTiles**(`outputs`, `cx`, `cz`, `tiles`): `void`
 
-Defined in: [dungeon/bsp.ts:1079](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/dungeon/bsp.ts#L1079)
+Defined in: [dungeon/bsp.ts:1076](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/dungeon/bsp.ts#L1076)
 
-Write per-cell floor skirt tile IDs for one or more directions.
-Only directions present in `map` are written; absent directions are unchanged.
-Call after modifying to trigger a renderer refresh (texture.needsUpdate is set automatically).
+Write floor skirt overlay tile IDs for a single cell.
+`tiles` is an array of up to 4 numeric tile IDs corresponding to RGBA slots 1–4.
+Missing entries are left unchanged; pass 0 to clear a slot.
 
 ## Parameters
 
@@ -17,11 +17,7 @@ Call after modifying to trigger a renderer refresh (texture.needsUpdate is set a
 | `outputs` | [`DungeonOutputs`](../type-aliases/DungeonOutputs.md) |
 | `cx` | `number` |
 | `cz` | `number` |
-| `map` | \{ `east?`: `number`; `north?`: `number`; `south?`: `number`; `west?`: `number`; \} |
-| `map.east?` | `number` |
-| `map.north?` | `number` |
-| `map.south?` | `number` |
-| `map.west?` | `number` |
+| `tiles` | `number`[] |
 
 ## Returns
 

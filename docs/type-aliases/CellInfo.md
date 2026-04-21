@@ -4,7 +4,7 @@
 
 > **CellInfo** = `object`
 
-Defined in: [rendering/dungeonRenderer.ts:50](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/rendering/dungeonRenderer.ts#L50)
+Defined in: [rendering/dungeonRenderer.ts:50](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/rendering/dungeonRenderer.ts#L50)
 
 Information about a dungeon cell returned by mouse interaction callbacks.
 
@@ -12,6 +12,6 @@ Information about a dungeon cell returned by mouse interaction callbacks.
 
 | Property | Type | Description | Defined in |
 | ------ | ------ | ------ | ------ |
-| <a id="cx"></a> `cx` | `number` | Grid column (0-based). | [rendering/dungeonRenderer.ts:52](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/rendering/dungeonRenderer.ts#L52) |
-| <a id="cz"></a> `cz` | `number` | Grid row (0-based). | [rendering/dungeonRenderer.ts:54](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/rendering/dungeonRenderer.ts#L54) |
-| <a id="regionid"></a> `regionId` | `number` | Region/room ID from the dungeon's regionId texture (0 = unassigned). | [rendering/dungeonRenderer.ts:56](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/rendering/dungeonRenderer.ts#L56) |
+| <a id="cx"></a> `cx` | `number` | Grid column (0-based). | [rendering/dungeonRenderer.ts:52](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/rendering/dungeonRenderer.ts#L52) |
+| <a id="cz"></a> `cz` | `number` | Grid row (0-based). | [rendering/dungeonRenderer.ts:54](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/rendering/dungeonRenderer.ts#L54) |
+| <a id="regionid"></a> `regionId` | `number` | Region/room ID from the dungeon's regionId texture (0 = unassigned). | [rendering/dungeonRenderer.ts:56](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/rendering/dungeonRenderer.ts#L56) |

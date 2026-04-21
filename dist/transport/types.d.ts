@@ -1,4 +1,5 @@
 import { TurnAction } from '../turn/types';
+/** Network state snapshot for a single player, broadcast in every `ServerStateUpdate`. */
 export type PlayerNetState = {
     /** Grid X position. */
     x: number;
@@ -48,6 +49,14 @@ export type DungeonInitPayload = {
     /** Original dungeon config so the server can share it with late-joiners. */
     config: Record<string, unknown>;
 };
+/**
+ * Dependency-injection interface for the optional multiplayer transport layer.
+ *
+ * Pass an implementation to `GameOptions.transport` to make the server
+ * authoritative for all player actions. Omit for single-player — zero overhead.
+ *
+ * Use `createWebSocketTransport(url)` for a ready-made WebSocket implementation.
+ */
 export type ActionTransport = {
     /**
      * Connect to the server. Resolves with the server-assigned player ID and

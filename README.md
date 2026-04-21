@@ -94,6 +94,8 @@ Game logic lives entirely in your JS layer - the library provides the rendering 
 - Atlas surface painting - apply tile layers to walls, floors, and ceilings per-tile
 - Configurable keybindings
 - **Inventory dialog UI** - `showInventory()` renders a two-column RPG inventory screen (character profile, item grid, equipment paper-doll, stat bars, indicators, action buttons) with full drag-and-drop support; pass `customLayout: true` for a bare `<dialog>` you control
+- Mission / quest system — `game.missions.add()` registers evaluator-driven missions that auto-complete each turn, emit `mission-complete` events, and optionally broadcast completions to multiplayer peers
+- Turn-animation callback system — register async handlers on `game.animations` for `damage`, `death`, `move`, `attack`, `miss`, `heal`, and `xp-gain`; engine awaits all handlers between turn resolution and entity-position sync
 - Audio hooks (Howler.js compatible)
 - Optional multiplayer transport layer (WebSocket-based, server-authoritative)
 - **Texture Loader / Sprite Packer** — `loadTextureAtlas()` fetches a TexturePacker-format atlas, shelf-packs sprites into a power-of-two `OffscreenCanvas`, and returns a `PackedAtlas` with UV data accessible by name or id

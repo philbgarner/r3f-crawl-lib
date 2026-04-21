@@ -1,4 +1,5 @@
 import { EntityBase } from '../entities/types';
+/** All event kinds that can be queued during a turn for animation callbacks. */
 export type AnimationEventKind = 'damage' | 'heal' | 'death' | 'move' | 'attack' | 'miss' | 'xp-gain';
 export type AnimationEventMap = {
     /** An entity took damage. `actor` is who dealt it (if known). */

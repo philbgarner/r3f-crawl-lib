@@ -4,7 +4,7 @@
 
 > **InventoryHandle** = [`InventoryHandleCore`](InventoryHandleCore.md) & `object`
 
-Defined in: [ui/inventoryDialog.ts:98](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L98)
+Defined in: [ui/inventoryDialog.ts:155](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L155)
 
 Extended handle — additional methods added when customLayout is false.
 

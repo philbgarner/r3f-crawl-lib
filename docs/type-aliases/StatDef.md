@@ -4,13 +4,15 @@
 
 > **StatDef** = `object`
 
-Defined in: [ui/inventoryDialog.ts:26](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L26)
+Defined in: [ui/inventoryDialog.ts:32](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L32)
+
+A numeric stat bar displayed in the character profile (e.g. HP, MP).
 
 ## Properties
 
-| Property | Type | Defined in |
-| ------ | ------ | ------ |
-| <a id="color"></a> `color?` | `string` | [ui/inventoryDialog.ts:30](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L30) |
-| <a id="label"></a> `label` | `string` | [ui/inventoryDialog.ts:27](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L27) |
-| <a id="max"></a> `max` | `number` | [ui/inventoryDialog.ts:29](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L29) |
-| <a id="value"></a> `value` | `number` | [ui/inventoryDialog.ts:28](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L28) |
+| Property | Type | Description | Defined in |
+| ------ | ------ | ------ | ------ |
+| <a id="color"></a> `color?` | `string` | Optional CSS colour for the filled portion of the bar. | [ui/inventoryDialog.ts:40](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L40) |
+| <a id="label"></a> `label` | `string` | Display label for the stat bar. | [ui/inventoryDialog.ts:34](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L34) |
+| <a id="max"></a> `max` | `number` | Maximum value (used to scale the bar). | [ui/inventoryDialog.ts:38](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L38) |
+| <a id="value"></a> `value` | `number` | Current value. | [ui/inventoryDialog.ts:36](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L36) |

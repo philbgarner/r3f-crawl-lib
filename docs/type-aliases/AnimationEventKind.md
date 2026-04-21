@@ -4,4 +4,6 @@
 
 > **AnimationEventKind** = `"damage"` \| `"heal"` \| `"death"` \| `"move"` \| `"attack"` \| `"miss"` \| `"xp-gain"`
 
-Defined in: [animations/types.ts:12](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/animations/types.ts#L12)
+Defined in: [animations/types.ts:13](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/animations/types.ts#L13)
+
+All event kinds that can be queued during a turn for animation callbacks.

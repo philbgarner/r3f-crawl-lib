@@ -8,25 +8,40 @@ type BaseOpts = {
     faction?: string;
     spriteMap?: SpriteMap;
 };
+/** Options for `createNpc()`. Extends the shared base (type, sprite, x, z). */
 export type NpcOpts = BaseOpts & {
+    /** Starting HP. Defaults to `maxHp`. */
     hp?: number;
+    /** Maximum HP. Default: 10. */
     maxHp?: number;
+    /** Attack stat. Default: 0 (non-combatant). */
     attack?: number;
+    /** Defense stat. Default: 0. */
     defense?: number;
+    /** Turn speed (lower = acts more often). Default: 5. */
     speed?: number;
+    /** Whether this NPC blocks player movement. Default: `true`. */
     blocksMove?: boolean;
 };
 /** Create a friendly or neutral NPC entity. */
 export declare function createNpc(opts: NpcOpts): EntityBase;
+/** Options for `createEnemy()`. Extends the shared base (type, sprite, x, z). */
 export type EnemyOpts = BaseOpts & {
+    /** Starting HP. Defaults to `maxHp`. */
     hp?: number;
+    /** Maximum HP. Default: 10. */
     maxHp?: number;
+    /** Attack stat. Default: 3. */
     attack?: number;
+    /** Defense stat. Default: 0. */
     defense?: number;
+    /** Turn speed (lower = acts more often). Default: 7. */
     speed?: number;
+    /** Whether this enemy blocks player movement. Default: `true`. */
     blocksMove?: boolean;
-    /** 0–10 scale — influences detection radius and persistence. */
+    /** 0–10 scale — influences detection radius and persistence. Default: 1. */
     danger?: number;
+    /** XP awarded on kill. Default: 10. */
     xp?: number;
     rpsEffect?: RpsEffect;
 };
@@ -47,11 +62,13 @@ export type EnemyEntity = EntityBase & {
 };
 /** Create an enemy entity. */
 export declare function createEnemy(opts: EnemyOpts): EnemyEntity;
+/** Options for `createDecoration()`. Extends the shared base (type, sprite, x, z). */
 export type DecorationOpts = BaseOpts & {
+    /** Whether this decoration blocks player movement. Default: `false`. */
     blocksMove?: boolean;
-    /** Yaw rotation in radians. */
+    /** Yaw rotation in radians. Default: 0. */
     yaw?: number;
-    /** Uniform scale multiplier. */
+    /** Uniform scale multiplier. Default: 1. */
     scale?: number;
 };
 /** A stationary decoration entity (torch, pillar, furniture, etc.). */

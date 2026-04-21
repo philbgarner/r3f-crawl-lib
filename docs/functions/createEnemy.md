@@ -4,7 +4,7 @@
 
 > **createEnemy**(`opts`): `EnemyEntity`
 
-Defined in: [entities/factory.ts:112](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/entities/factory.ts#L112)
+Defined in: [entities/factory.ts:127](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/entities/factory.ts#L127)
 
 Create an enemy entity.
 

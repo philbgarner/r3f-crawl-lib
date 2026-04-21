@@ -4,7 +4,7 @@
 
 > **AnimationHandler**\<`K`\> = (`event`) => `Promise`\<`void`\> \| `void`
 
-Defined in: [animations/types.ts:42](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/animations/types.ts#L42)
+Defined in: [animations/types.ts:43](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/animations/types.ts#L43)
 
 ## Type Parameters
 

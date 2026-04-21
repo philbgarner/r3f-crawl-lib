@@ -10,6 +10,7 @@ import type { DungeonHandle } from '../api/createGame';
 // Mission status
 // ---------------------------------------------------------------------------
 
+/** Lifecycle state of a mission. */
 export type MissionStatus = 'active' | 'complete' | 'failed';
 
 // ---------------------------------------------------------------------------

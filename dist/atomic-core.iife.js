@@ -3691,6 +3691,30 @@ void main() {
 		mesh.instanceMatrix.needsUpdate = true;
 		return mesh;
 	}
+	/**
+	* Mount a Three.js first-person dungeon renderer into `element`.
+	*
+	* Call after `game.generate()` is wired up. The renderer reads dungeon geometry
+	* from the game handle and re-renders whenever the player moves. Pass an
+	* `options.packedAtlas` + `options.tileNameResolver` pair to enable textured
+	* walls/floors/ceilings; omit them for flat-colour geometry.
+	*
+	* @param element  Container element — the renderer fills it entirely.
+	* @param game     Live `GameHandle` returned by `createGame()`.
+	* @param options  Optional renderer configuration (fog, atlas, skirt tiles, etc.).
+	* @returns        A `DungeonRenderer` handle with `setEntities`, `addLayer`, etc.
+	*
+	* @example
+	* const packed = await loadTextureAtlas('sprites.png', atlasJson);
+	* const renderer = createDungeonRenderer(document.getElementById('viewport'), game, {
+	*   packedAtlas: packed,
+	*   tileNameResolver: packedAtlasResolver(packed),
+	*   floorTile: 'stone_floor',
+	*   wallTile:  'brick_wall',
+	*   ceilTile:  'ceiling_stone',
+	* });
+	* game.events.on('turn', () => renderer.setEntities([...enemies]));
+	*/
 	function createDungeonRenderer(element, game, options = {}) {
 		const tileSize = options.tileSize ?? 3;
 		const ceilingH = options.ceilingHeight ?? 3;
@@ -4954,6 +4978,29 @@ void main() {
 			left: "50%"
 		}
 	];
+	/**
+	* Build and open an RPG-style inventory dialog.
+	*
+	* Default behaviour (`customLayout: false`) renders a two-column layout:
+	* left column has a character profile + item grid; right column has an equipment
+	* paper-doll, optional indicator strip, and action buttons. Full drag-and-drop
+	* is supported between inventory slots and equip slots.
+	*
+	* Pass `customLayout: true` to receive a bare `<dialog>` element and populate it
+	* yourself via `handle.getElement()`.
+	*
+	* @param opts  Configuration options — all fields are optional.
+	* @returns     An `InventoryHandle` for programmatic updates and close control.
+	*
+	* @example
+	* const handle = showInventory({
+	*   inventory: player.inventory,
+	*   equippedItems: player.equipped,
+	*   stats: [{ label: 'HP', value: player.hp, max: player.maxHp }],
+	*   onClose: () => resumeGame(),
+	*   onUseItem: (slot) => useItem(slot.item),
+	* });
+	*/
 	function showInventory(opts = {}) {
 		const o = {
 			customLayout: false,

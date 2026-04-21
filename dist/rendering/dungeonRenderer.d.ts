@@ -237,5 +237,29 @@ export type DungeonRenderer = {
     /** Unmount the canvas and release all Three.js resources. */
     destroy(): void;
 };
+/**
+ * Mount a Three.js first-person dungeon renderer into `element`.
+ *
+ * Call after `game.generate()` is wired up. The renderer reads dungeon geometry
+ * from the game handle and re-renders whenever the player moves. Pass an
+ * `options.packedAtlas` + `options.tileNameResolver` pair to enable textured
+ * walls/floors/ceilings; omit them for flat-colour geometry.
+ *
+ * @param element  Container element — the renderer fills it entirely.
+ * @param game     Live `GameHandle` returned by `createGame()`.
+ * @param options  Optional renderer configuration (fog, atlas, skirt tiles, etc.).
+ * @returns        A `DungeonRenderer` handle with `setEntities`, `addLayer`, etc.
+ *
+ * @example
+ * const packed = await loadTextureAtlas('sprites.png', atlasJson);
+ * const renderer = createDungeonRenderer(document.getElementById('viewport'), game, {
+ *   packedAtlas: packed,
+ *   tileNameResolver: packedAtlasResolver(packed),
+ *   floorTile: 'stone_floor',
+ *   wallTile:  'brick_wall',
+ *   ceilTile:  'ceiling_stone',
+ * });
+ * game.events.on('turn', () => renderer.setEntities([...enemies]));
+ */
 export declare function createDungeonRenderer(element: HTMLElement, game: GameHandle, options?: DungeonRendererOptions): DungeonRenderer;
 //# sourceMappingURL=dungeonRenderer.d.ts.map

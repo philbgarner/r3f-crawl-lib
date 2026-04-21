@@ -4,14 +4,38 @@
 
 > **showInventory**(`opts?`): [`InventoryHandle`](../type-aliases/InventoryHandle.md)
 
-Defined in: [ui/inventoryDialog.ts:129](https://github.com/philbgarner/atomic-core/blob/7b7463b8325930f15251c0be70e7a1d4211f3108/src/lib/ui/inventoryDialog.ts#L129)
+Defined in: [ui/inventoryDialog.ts:209](https://github.com/philbgarner/atomic-core/blob/059d282bcb55e802a623f9e7a0f2cb290623baf0/src/lib/ui/inventoryDialog.ts#L209)
+
+Build and open an RPG-style inventory dialog.
+
+Default behaviour (`customLayout: false`) renders a two-column layout:
+left column has a character profile + item grid; right column has an equipment
+paper-doll, optional indicator strip, and action buttons. Full drag-and-drop
+is supported between inventory slots and equip slots.
+
+Pass `customLayout: true` to receive a bare `<dialog>` element and populate it
+yourself via `handle.getElement()`.
 
 ## Parameters
 
-| Parameter | Type |
-| ------ | ------ |
-| `opts` | [`InventoryOptions`](../type-aliases/InventoryOptions.md) |
+| Parameter | Type | Description |
+| ------ | ------ | ------ |
+| `opts` | [`InventoryOptions`](../type-aliases/InventoryOptions.md) | Configuration options — all fields are optional. |
 
 ## Returns
 
 [`InventoryHandle`](../type-aliases/InventoryHandle.md)
+
+An `InventoryHandle` for programmatic updates and close control.
+
+## Example
+
+```ts
+const handle = showInventory({
+  inventory: player.inventory,
+  equippedItems: player.equipped,
+  stats: [{ label: 'HP', value: player.hp, max: player.maxHp }],
+  onClose: () => resumeGame(),
+  onUseItem: (slot) => useItem(slot.item),
+});
+```

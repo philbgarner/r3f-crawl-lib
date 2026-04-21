@@ -319,7 +319,6 @@ function buildInstancedMesh(
   uvHeightScales?: number[],
   cellX?: Float32Array,
   cellZ?: Float32Array,
-  skirtDirChannels?: number[],
 ): THREE.InstancedMesh {
   const geo = new THREE.PlaneGeometry(1, 1);
 
@@ -370,10 +369,6 @@ function buildInstancedMesh(
       geo.setAttribute("aCellX", new THREE.InstancedBufferAttribute(cellX, 1));
       geo.setAttribute("aCellZ", new THREE.InstancedBufferAttribute(cellZ, 1));
     }
-
-    const sdcArr = new Float32Array(matrices.length);
-    if (skirtDirChannels) skirtDirChannels.forEach((v, i) => { sdcArr[i] = v; });
-    geo.setAttribute("aSkirtDirChannel", new THREE.InstancedBufferAttribute(sdcArr, 1));
   }
 
   const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
@@ -386,6 +381,30 @@ function buildInstancedMesh(
 // createDungeonRenderer
 // ---------------------------------------------------------------------------
 
+/**
+ * Mount a Three.js first-person dungeon renderer into `element`.
+ *
+ * Call after `game.generate()` is wired up. The renderer reads dungeon geometry
+ * from the game handle and re-renders whenever the player moves. Pass an
+ * `options.packedAtlas` + `options.tileNameResolver` pair to enable textured
+ * walls/floors/ceilings; omit them for flat-colour geometry.
+ *
+ * @param element  Container element — the renderer fills it entirely.
+ * @param game     Live `GameHandle` returned by `createGame()`.
+ * @param options  Optional renderer configuration (fog, atlas, skirt tiles, etc.).
+ * @returns        A `DungeonRenderer` handle with `setEntities`, `addLayer`, etc.
+ *
+ * @example
+ * const packed = await loadTextureAtlas('sprites.png', atlasJson);
+ * const renderer = createDungeonRenderer(document.getElementById('viewport'), game, {
+ *   packedAtlas: packed,
+ *   tileNameResolver: packedAtlasResolver(packed),
+ *   floorTile: 'stone_floor',
+ *   wallTile:  'brick_wall',
+ *   ceilTile:  'ceiling_stone',
+ * });
+ * game.events.on('turn', () => renderer.setEntities([...enemies]));
+ */
 export function createDungeonRenderer(
   element: HTMLElement,
   game: GameHandle,
@@ -553,6 +572,15 @@ export function createDungeonRenderer(
     if (u['uSkirtLookup']) u['uSkirtLookup'].value = tex;
   }
 
+  function syncSkirtLookupUniforms(): void {
+    const outputs = game.dungeon.outputs;
+    if (!outputs) return;
+    setSkirtLookupUniform(floorEdgeMat,      outputs.textures.floorSkirtType);
+    setSkirtLookupUniform(ceilEdgeMat,       outputs.textures.ceilSkirtType);
+    setSkirtLookupUniform(floorWallSkirtMat, outputs.textures.floorSkirtType);
+    setSkirtLookupUniform(ceilWallSkirtMat,  outputs.textures.ceilSkirtType);
+  }
+
   /** Push per-surface overlay textures into their respective atlas materials. */
   function syncOverlayUniforms(width: number, height: number): void {
     const size = new THREE.Vector2(width, height);
@@ -565,6 +593,7 @@ export function createDungeonRenderer(
       if (u['uDungeonSize'])   u['uDungeonSize'].value   = size;
     };
     set(floorMat,          overlayFloor.tex);
+    set(floorEdgeMat,      overlayFloor.tex);
     set(wallMat,           overlayWall.tex);
     set(ceilMat,           overlayCeil.tex);
     set(ceilEdgeMat,       overlayCeil.tex);
@@ -608,6 +637,9 @@ export function createDungeonRenderer(
   const wallMat = packedAtlas
     ? makeAtlasMaterial()
     : new THREE.MeshStandardMaterial({ color: 0x6b6070 });
+  const floorEdgeMat = packedAtlas
+    ? makeAtlasMaterial()
+    : new THREE.MeshStandardMaterial({ color: 0x555566 });
   const ceilEdgeMat = packedAtlas
     ? makeAtlasMaterialDoubleSide()
     : new THREE.MeshStandardMaterial({
@@ -898,14 +930,6 @@ export function createDungeonRenderer(
       | Uint8Array
       | undefined;
 
-    // Per-cell skirt type override data (RGBA: R=north, G=south, B=east, A=west).
-    const floorSkirtData = outputs.textures.floorSkirtType.image.data as Uint8Array;
-    const ceilSkirtData  = outputs.textures.ceilSkirtType.image.data as Uint8Array;
-
-    const dirChannel: Record<"north" | "south" | "east" | "west", number> = {
-      north: 0, south: 1, east: 2, west: 3,
-    };
-
     // Helper: resolve a FaceTileSpec from a DirectionFaceMap for a given direction,
     // falling back to a plain tile ID with no rotation.
     function spec(
@@ -945,12 +969,10 @@ export function createDungeonRenderer(
     const floorWallSkirtRects: UvRect[] = [];
     const floorWallSkirtRots: number[] = [];
     const floorWallSkirtHeightScales: number[] = [];
-    const floorWallSkirtDirCh: number[] = [];
     const ceilWallSkirtEdges: THREE.Matrix4[] = [];
     const ceilWallSkirtRects: UvRect[] = [];
     const ceilWallSkirtRots: number[] = [];
     const ceilWallSkirtHeightScales: number[] = [];
-    const ceilWallSkirtDirCh: number[] = [];
 
     function isSolid(cx: number, cz: number) {
       if (cx < 0 || cz < 0 || cx >= width || cz >= height) return true;
@@ -1084,9 +1106,7 @@ export function createDungeonRenderer(
             ry: number,
             dir: "north" | "south" | "east" | "west",
           ) {
-            const ch = dirChannel[dir];
-            const override = floorSkirtData[(cz * width + cx) * 4 + ch] ?? 0;
-            const s = override > 0 ? { tile: override, rotation: 0 } : spec(floorSkirtTiles, dir, floorId);
+            const s = spec(floorSkirtTiles, dir, floorId);
             const neighborFloorY = (nfVal - 128) * offsetStep;
             const stepH = currentFloorY - neighborFloorY;
             const fullPanels = Math.floor(stepH / tileSize);
@@ -1130,7 +1150,6 @@ export function createDungeonRenderer(
             dir: "north" | "south" | "east" | "west",
           ) {
             const s = spec(wallTiles, dir, wallId);
-            const ch = dirChannel[dir];
             const fullPanels = Math.floor(gapH / tileSize);
             const rem = gapH - fullPanels * tileSize;
             for (let i = 0; i < fullPanels; i++) {
@@ -1140,7 +1159,6 @@ export function createDungeonRenderer(
               floorWallSkirtRots.push(s.rotation ?? 0);
               floorWallSkirtHeightScales.push(1.0);
               floorWallSkirtCellMap.push({ cx, cz });
-              floorWallSkirtDirCh.push(ch);
             }
             if (rem > 0.001) {
               const midY = -(fullPanels * tileSize + rem / 2);
@@ -1149,7 +1167,6 @@ export function createDungeonRenderer(
               floorWallSkirtRots.push(s.rotation ?? 0);
               floorWallSkirtHeightScales.push(rem / tileSize);
               floorWallSkirtCellMap.push({ cx, cz });
-              floorWallSkirtDirCh.push(ch);
             }
           }
           if (isSolid(cx, cz - 1)) addWallFloorSkirt(wx, cz * tileSize, 0, "north");
@@ -1168,9 +1185,7 @@ export function createDungeonRenderer(
           ry: number,
           dir: "north" | "south" | "east" | "west",
         ) {
-          const ch = dirChannel[dir];
-          const override = ceilSkirtData[(cz * width + cx) * 4 + ch] ?? 0;
-          const s = override > 0 ? { tile: override, rotation: 0 } : spec(ceilSkirtTiles, dir, ceilId);
+          const s = spec(ceilSkirtTiles, dir, ceilId);
           const h = (ncVal - ceilVal) * offsetStep;
           const fullPanels = Math.floor(h / tileSize);
           const rem = h - fullPanels * tileSize;
@@ -1216,7 +1231,6 @@ export function createDungeonRenderer(
             dir: "north" | "south" | "east" | "west",
           ) {
             const s = spec(wallTiles, dir, wallId);
-            const ch = dirChannel[dir];
             const fullPanels = Math.floor(gapH / tileSize);
             const rem = gapH - fullPanels * tileSize;
             for (let i = 0; i < fullPanels; i++) {
@@ -1226,7 +1240,6 @@ export function createDungeonRenderer(
               ceilWallSkirtRots.push(s.rotation ?? 0);
               ceilWallSkirtHeightScales.push(1.0);
               ceilWallSkirtCellMap.push({ cx, cz });
-              ceilWallSkirtDirCh.push(ch);
             }
             if (rem > 0.001) {
               const midY = ceilingH + fullPanels * tileSize + rem / 2;
@@ -1235,7 +1248,6 @@ export function createDungeonRenderer(
               ceilWallSkirtRots.push(s.rotation ?? 0);
               ceilWallSkirtHeightScales.push(rem / tileSize);
               ceilWallSkirtCellMap.push({ cx, cz });
-              ceilWallSkirtDirCh.push(ch);
             }
           }
           if (isSolid(cx, cz - 1)) addWallCeilSkirt(wx, cz * tileSize, 0, "north");
@@ -1284,7 +1296,7 @@ export function createDungeonRenderer(
     meshToCellMap.set(wallMesh, wallCellMap);
 
     floorEdgeMesh = buildInstancedMesh(
-      floorEdges, floorEdgeRects, floorMat, !!packedAtlas,
+      floorEdges, floorEdgeRects, floorEdgeMat, !!packedAtlas,
       undefined, floorEdgeRots, floorEdgeHeightScales, fEdgeCX, fEdgeCZ,
     );
     scene.add(floorEdgeMesh);
@@ -1302,27 +1314,24 @@ export function createDungeonRenderer(
       floorWallSkirtMesh = buildInstancedMesh(
         floorWallSkirtEdges, floorWallSkirtRects, floorWallSkirtMat, !!packedAtlas,
         undefined, floorWallSkirtRots, floorWallSkirtHeightScales, fwsCX, fwsCZ,
-        floorWallSkirtDirCh,
       );
       scene.add(floorWallSkirtMesh);
       meshToCellMap.set(floorWallSkirtMesh, floorWallSkirtCellMap);
-      setSkirtLookupUniform(floorWallSkirtMat, outputs.textures.floorSkirtType);
     }
     if (ceilWallSkirtEdges.length > 0) {
       const [cwsCX, cwsCZ] = cellArrays(ceilWallSkirtCellMap);
       ceilWallSkirtMesh = buildInstancedMesh(
         ceilWallSkirtEdges, ceilWallSkirtRects, ceilWallSkirtMat, !!packedAtlas,
         undefined, ceilWallSkirtRots, ceilWallSkirtHeightScales, cwsCX, cwsCZ,
-        ceilWallSkirtDirCh,
       );
       scene.add(ceilWallSkirtMesh);
       meshToCellMap.set(ceilWallSkirtMesh, ceilWallSkirtCellMap);
-      setSkirtLookupUniform(ceilWallSkirtMat, outputs.textures.ceilSkirtType);
     }
 
     // Build / sync the surface-painter overlay texture now that the dungeon is ready.
     rebuildOverlayTexture(width, height);
     syncOverlayUniforms(width, height);
+    syncSkirtLookupUniforms();
 
     // Apply any layers registered before the dungeon was generated.
     for (const entry of layerEntries) {

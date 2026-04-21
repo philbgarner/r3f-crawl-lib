@@ -30,10 +30,13 @@ export interface ItemType {
 // Inventory types
 // --------------------------------
 
+/** A single slot in a character's inventory grid. */
 export interface InventorySlot {
-  /** Slot position index. */
+  /** Slot position index (0-based). */
   index: number;
+  /** The item occupying this slot, or `null` if empty. */
   item: Item | null;
+  /** Stack count. 1 for non-stackable items. */
   quantity: number;
 }
 
@@ -51,9 +54,13 @@ export interface InventoryProps {
 // createItem factory
 // --------------------------------
 
+/** Options for `createItem()`. */
 export type ItemOpts = {
+  /** Display name. */
   name: string;
+  /** Item type key (e.g. `'health_potion'`, `'sword'`). */
   type: string;
+  /** Arbitrary initial item state (charges, durability, etc.). */
   state?: Record<string, unknown>;
 };
 
