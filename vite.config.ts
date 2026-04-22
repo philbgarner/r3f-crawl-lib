@@ -2,8 +2,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import dts from 'vite-plugin-dts'
 import { resolve } from 'path'
+import pkg from './package.json'
 
 export default defineConfig({
+  define: {
+    __PACKAGE_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [
     react(),
     dts({

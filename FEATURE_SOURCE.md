@@ -25,6 +25,7 @@ src/lib/
     cellular.ts
     colliderFlags.ts
     serialize.ts
+    mapFile.ts
     tiled.ts
     themes.ts
   turn/
@@ -135,7 +136,7 @@ Camera-facing billboard quads driven by a multi-layer sprite system. Actors decl
 - `dungeon/bsp.ts` — BSP tree split, room placement, corridor carving, `setupDungeon()`, `DungeonOutputs` shape; produces `floorHeightOffset`, `ceilingHeightOffset`, `colliderFlags`, `floorSkirtType`, and `ceilSkirtType` textures; `setFloorSkirtTiles()` / `setCeilSkirtTiles()` per-cell skirt tile helpers
 - `dungeon/cellular.ts` — cellular automata generator producing the same `DungeonOutputs` shape including `colliderFlags`, `floorSkirtType`, and `ceilSkirtType`
 - `dungeon/colliderFlags.ts` — `IS_WALKABLE`, `IS_BLOCKED`, `IS_LIGHT_PASSABLE` constants; `buildColliderFlags()` deriver; `isWalkableCell()`, `isBlockedCell()`, `isLightPassableCell()` predicates
-- `dungeon/serialize.ts` — serialize/deserialize a `DungeonOutputs` to JSON (includes `colliderFlags`, `floorSkirtType`, `ceilSkirtType`; skirt fields optional for backwards compat)
+- `dungeon/serialize.ts` — `SerializedDungeon` type (version, width, height, seed, startRoomId, endRoomId, firstCorridorRegionId, plus Base64 channels for solid/regionId/distanceToWall/hazards/colliderFlags/floorSkirtType?/ceilSkirtType?); `serializeDungeon()` snapshots all mutable texture data; `deserializeDungeon()` reconstructs a `BspDungeonOutputs` with empty surface-painter textures (overlays zeroed) and optional graceful fallback for skirt fields; `rehydrateDungeon()` does full restoration including room graph by re-running BSP deterministically with the stored seed; `dungeonToJson()` / `dungeonFromJson()` JSON string convenience wrappers
 - `dungeon/themes.ts` — `ThemeDef` type with optional `floorSkirtType?` / `ceilSkirtType?` tile name fields; `ThemeSelector` union (string | string[] | weighted array | callback); built-in themes (dungeon, crypt, catacomb, industrial, ruins); public exports `THEMES`, `THEME_KEYS`, `resolveTheme()`, `registerTheme()`, `getTheme()`
 - `utils/geometry.ts` — `MinHeap<T>`, `octile()` used internally by BSP helpers
 
@@ -156,7 +157,7 @@ Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture)
 - `dungeon/bsp.ts` — populates `colliderFlags` in `generateBspDungeon()`
 - `dungeon/cellular.ts` — populates `colliderFlags` in `generateCellularDungeon()`
 - `dungeon/tiled.ts` — populates `colliderFlags` (from optional layer or derived from solid)
-- `dungeon/serialize.ts` — includes `colliderFlags` in serialized snapshot
+- `dungeon/serialize.ts` — includes `colliderFlags` in `SerializedDungeon`; restored verbatim on both `deserializeDungeon()` and `rehydrateDungeon()`
 - `api/createGame.ts` — stores `colliderFlagsData`; drives `isWalkable` and `isOpaque` callbacks
 - `rendering/camera.ts` — both `createCamera` and `createEotBCamera` accept optional `colliderFlagsData`; `setColliderFlagsData()` method on each
 
@@ -265,7 +266,7 @@ Two RGBA DataTextures (`floorSkirtType`, `ceilSkirtType`) on `DungeonOutputs` pr
 - `dungeon/cellular.ts` — same channels in `CellularDungeonOutputs`
 - `dungeon/tiled.ts` — zero-filled channels to satisfy `DungeonOutputs` shape
 - `dungeon/themes.ts` — optional `floorSkirtType?` / `ceilSkirtType?` string fields on `ThemeDef`
-- `dungeon/serialize.ts` — optional `floorSkirtType` / `ceilSkirtType` fields in `SerializedDungeon`; graceful fallback (zero-filled) when deserializing older snapshots
+- `dungeon/serialize.ts` — optional `floorSkirtType?` / `ceilSkirtType?` Base64 RGBA fields in `SerializedDungeon`; `deserializeDungeon()` zero-fills missing skirt channels for backwards compatibility; `rehydrateDungeon()` applies stored skirt data over freshly generated textures when present
 - `rendering/basicLighting.ts` — `uSkirtLookup` uniform; fragment shader composites all 4 non-zero slots from `uSkirtLookup` on top of the base tile (same pattern as `uOverlayLookup`)
 - `rendering/dungeonRenderer.ts` — `floorEdgeMesh` gets its own `floorEdgeMat` (separated from `floorMat`) so its `uSkirtLookup` can be set independently; wall-adjacent skirts split into `floorWallSkirtMesh` / `ceilWallSkirtMesh` each with its own material; `syncSkirtLookupUniforms()` wires `floorSkirtType`/`ceilSkirtType` to the four skirt materials after dungeon build
 - `index.ts` — exports `setFloorSkirtTiles`, `setCeilSkirtTiles`
@@ -405,6 +406,16 @@ Async callback layer that fires between turn resolution and entity-position sync
 - `animations/types.ts` — `AnimationEventKind`, `AnimationEventMap`, `AnimationQueueEntry`, `AnimationHandler`, `AnimationsHandle` public types
 - `animations/animationRegistry.ts` — `createAnimationRegistry()` factory; internal `_enqueue()` / `_flush()` methods used by `createGame`; `on`, `off`, `clear` on the public handle
 - `api/createGame.ts` — `makeApplyAction` emits animation events via optional `onAnimEvent` callback; `turns.commit()` is now `async`, flushes registry after the turn loop; `onStateUpdate` diffs old vs. new actor state to synthesize animation events in multiplayer; exposes `game.animations`
+
+---
+
+### Dungeon map file import/export
+
+Self-contained save/load layer that wraps a `SerializedDungeon` with all settings needed to reproduce the exact dungeon and renderer in a new session. The embedded `version` field matches the atomic-core npm package version at export time (injected via Vite `define`) and is intended for backward-compatibility gating on import. Non-serializable renderer fields (packedAtlas, tileNameResolver, event callbacks) are stripped at export; re-supply them when creating the renderer after load.
+
+**Files:**
+- `dungeon/mapFile.ts` — `DungeonMapFile` wrapper type (`version`, `exportedAt`, `meta?`, `generatorOptions`, `rendererOptions`, `dungeon`); `DungeonMapMeta` optional author metadata type; `SerializedRendererOptions` = `DungeonRendererOptions` minus callbacks/PackedAtlas; `ExportOptions` caller input type; `ImportResult` return type; `exportDungeonMap(dungeon, opts)` builds the wrapper; `dungeonMapToJson()` convenience JSON string; `importDungeonMap(data)` reconstructs `BspDungeonOutputs` + all settings; `dungeonMapFromJson(json)` convenience parse wrapper
+- `index.ts` — exports `exportDungeonMap`, `dungeonMapToJson`, `importDungeonMap`, `dungeonMapFromJson` and all associated types
 
 ---
 
