@@ -22,52 +22,40 @@ import * as THREE from "three";
  * WebGL attribute slot budget: 16 total.
  *   Built-ins used by Three.js InstancedMesh:
  *     position (1) + uv (1) + instanceMatrix/mat4 (4) = 6
- *   Custom attributes below = 10 → total 16, exactly at the limit.
- *   Do not add more attributes without removing or repacking existing ones.
+ *   Custom attributes: aUvRect(1) + aSurface(1) + aAoCorners(1) + aCellFace(1) = 4
+ *   Total used: 10 / 16 — 6 slots remain for future attributes.
+ *   Each vec2/vec3/vec4 attribute occupies exactly 1 WebGL slot regardless of component count.
  */
 
 /**
  * Atlas vertex shader.
  *
  * Responsibilities (in order):
- *   1. Clip UV height for partial-height skirt panels (aUvHeightScale).
+ *   1. Clip UV height for partial-height skirt panels (aSurface.z = uvHeightScale).
  *   2. Select the AO corner value for this vertex from aAoCorners.
- *   3. Rotate the tile UV in 90° steps (aUvRotation).
- *   4. Map local UV into the atlas rect (aUvX/Y/W/H).
- *   5. Compute cell-relative overlay UV (aCell / uDungeonSize).
- *   6. Apply height offset in world space (aHeightOffset).
+ *   3. Rotate the tile UV in 90° steps (aSurface.y = uvRotation).
+ *   4. Map local UV into the atlas rect (aUvRect.xy = origin, aUvRect.zw = size).
+ *   5. Compute cell-relative overlay UV (aCellFace.xy / uDungeonSize).
+ *   6. Apply height offset in world space (aSurface.x = heightOffset).
  *   7. Compute vFacingLight: fixed for floors/ceilings, dot-product for walls.
  *   8. Output fog distance as eye-space length.
  */
 export const BASIC_ATLAS_VERT = /* glsl */ `
 // ── Per-instance atlas UV rect ────────────────────────────────────────────────
-// The atlas is divided into tiles; these four floats define the UV-space rect
-// [aUvX, aUvY] + [aUvW, aUvH] of the tile assigned to this instance.
-attribute float aUvX;
-attribute float aUvY;
-attribute float aUvW;
-attribute float aUvH;
+// Atlas tile UV rect packed as a single vec4 (1 slot).
+//   .xy = rect origin (uvX, uvY)   .zw = rect size (uvW, uvH)
+// Packing four floats into one vec4 saves 3 attribute slots vs. separate floats.
+attribute vec4 aUvRect;
 
-// ── Per-instance geometry offsets ────────────────────────────────────────────
-// World-space Y offset applied after the instance matrix transform.
-// Used to shift floors and ceilings to their height-offset positions.
-attribute float aHeightOffset;
-
-// UV rotation index: 0=0°, 1=90°CCW, 2=180°, 3=270°CCW.
-// Applied after height-scale clipping so rotation never fights the clip axis.
-attribute float aUvRotation;
-
-// Fraction of the tile height to show, top-aligned (1.0 = full tile).
-// Skirt panels at step edges show only the top portion so brick rows stay
-// correctly sized rather than stretching to fill a partial panel.
-attribute float aUvHeightScale;
+// ── Per-instance geometry + UV transform ─────────────────────────────────────
+// Three per-face scalars packed into one vec3 (1 slot, saves 2 vs. 3 floats).
+//   .x = heightOffset   — world-space Y shift applied after instance matrix
+//   .y = uvRotation     — UV rotation index: 0=0°, 1=90°CCW, 2=180°, 3=270°CCW
+//   .z = uvHeightScale  — fraction of tile height to show, top-aligned [0,1];
+//                         skirt panels use < 1 so brick rows keep aspect ratio
+attribute vec3 aSurface;
 
 // ── Per-instance overlay / lighting data ─────────────────────────────────────
-// Grid cell (column, row) for this instance. Used to compute the UV into
-// uOverlayLookup so the surface-painter overlay is sampled at the right cell.
-// Packed as vec2 to stay within the 16-attribute WebGL slot limit.
-attribute vec2 aCell;
-
 // Pre-baked ambient-occlusion corner values in face-local UV order:
 //   .x = top-left (uv 0,1), .y = top-right (uv 1,1)
 //   .z = bot-left (uv 0,0), .w = bot-right (uv 1,0)
@@ -77,16 +65,15 @@ attribute vec2 aCell;
 // neighbours on each side. Skirt faces default to 1.0 (always fully lit).
 attribute vec4 aAoCorners;
 
-// XZ components of this face's outward unit normal, world space.
-// Non-zero only for wall faces (set in buildInstancedMesh):
-//   North wall (faces +Z): (0,  1)   South wall (faces -Z): ( 0, -1)
-//   West  wall (faces +X): (1,  0)   East  wall (faces -X): (-1,  0)
-// Floor/ceiling instances carry (0,0) — they use uSurfaceLight directly.
-// Packed as vec2 to stay within the 16-attribute WebGL slot limit.
-attribute vec2 aFaceN;
+// Grid cell + face normal packed as a single vec4 (1 slot, saves 1 vs. 2×vec2).
+//   .xy = grid cell (column, row) — used to index into uOverlayLookup
+//   .zw = XZ outward face normal  — non-zero only for wall faces:
+//           North (0, 1)  South (0,-1)  West (1, 0)  East (-1, 0)
+//         Floor/ceiling carry (0,0) and use uSurfaceLight directly.
+attribute vec4 aCellFace;
 
 // ── Uniforms ──────────────────────────────────────────────────────────────────
-// Width and height of the dungeon grid in cells. Used to normalise aCell
+// Width and height of the dungeon grid in cells. Used to normalise aCellFace.xy
 // into [0,1] UV space for the overlay lookup texture.
 uniform vec2 uDungeonSize;
 
@@ -104,7 +91,7 @@ uniform float uSurfaceLight;
 // Wall directional lighting range. Only used when uSurfaceLight < 0.
 //   uWallLightMin : brightness when wall normal is perpendicular to camera (side wall)
 //   uWallLightMax : brightness when wall normal is parallel   to camera (facing wall)
-// Formula: vFacingLight = uWallLightMin + abs(dot(aFaceN, uCamDir)) * (uWallLightMax - uWallLightMin)
+// Formula: vFacingLight = uWallLightMin + abs(dot(aCellFace.zw, uCamDir)) * (uWallLightMax - uWallLightMin)
 // Defaults: min=0.9, max=1.1  →  range [0.9, 1.1]
 uniform float uWallLightMin;
 uniform float uWallLightMax;
@@ -123,7 +110,7 @@ void main() {
   // ── 1. Clip UV height for partial skirt panels ─────────────────────────────
   // Scale the Y axis of the UV BEFORE any rotation so the clip always acts on
   // the physical vertical axis of the face, regardless of rotation.
-  float hs = clamp(aUvHeightScale, 0.0, 1.0);
+  float hs = clamp(aSurface.z, 0.0, 1.0);
   vec2 localUv = vec2(uv.x, uv.y * hs);
 
   // ── 2. Select per-corner AO value for this vertex ─────────────────────────
@@ -136,7 +123,7 @@ void main() {
   else                                  vAo = aAoCorners.w; // bottom-right
 
   // ── 3. Rotate UV within the tile (0=0°, 1=90°CCW, 2=180°, 3=270°CCW) ──────
-  int iRot = int(floor(aUvRotation + 0.5));
+  int iRot = int(floor(aSurface.y + 0.5));
   if (iRot == 1)      localUv = vec2(localUv.y, 1.0 - localUv.x);
   else if (iRot == 2) localUv = vec2(1.0 - localUv.x, 1.0 - localUv.y);
   else if (iRot == 3) localUv = vec2(1.0 - localUv.y, localUv.x);
@@ -144,18 +131,18 @@ void main() {
   vLocalUv = localUv;
 
   // ── 4. Map local UV into the atlas rect ────────────────────────────────────
-  vTileOrigin = vec2(aUvX, aUvY);
-  vTileSize   = vec2(aUvW, aUvH);
+  vTileOrigin = aUvRect.xy;
+  vTileSize   = aUvRect.zw;
   vAtlasUv    = vTileOrigin + localUv * vTileSize;
 
   // ── 5. Overlay UV: cell-centre in normalised dungeon-grid space ────────────
   // Adding 0.5 moves from corner to centre of the cell so the lookup texture
   // is sampled at the right texel for this grid cell.
-  vOverlayUv = (aCell + 0.5) / uDungeonSize;
+  vOverlayUv = (aCellFace.xy + 0.5) / uDungeonSize;
 
   // ── 6. World position + height offset ─────────────────────────────────────
   vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-  worldPos.y   += aHeightOffset;
+  worldPos.y   += aSurface.x;
 
   // ── 7. Fog distance (eye-space length) ────────────────────────────────────
   vec4 eyePos = viewMatrix * worldPos;
@@ -169,7 +156,7 @@ void main() {
   // For flat surfaces (uSurfaceLight >= 0): uSurfaceLight is used directly
   // (floor=0.85, ceiling=0.95 by default; configurable via surfaceLighting option).
   if (uSurfaceLight < 0.0) {
-    vFacingLight = uWallLightMin + abs(dot(aFaceN, uCamDir)) * (uWallLightMax - uWallLightMin);
+    vFacingLight = uWallLightMin + abs(dot(aCellFace.zw, uCamDir)) * (uWallLightMax - uWallLightMin);
   } else {
     vFacingLight = uSurfaceLight;
   }

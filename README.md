@@ -1574,7 +1574,7 @@ var renderer = AtomicCore.createDungeonRenderer(el, game, {
 
 **How walls are calculated**
 
-Each wall face carries a precomputed outward unit normal stored in the `aFaceN` per-instance attribute (`vec2`, XZ plane only):
+Each wall face carries a precomputed outward unit normal stored in `aCellFace.zw` (the `.zw` components of the packed `aCellFace` vec4 attribute, XZ plane only):
 
 | Direction | Normal |
 |---|---|
@@ -1586,7 +1586,7 @@ Each wall face carries a precomputed outward unit normal stored in the `aFaceN` 
 Each frame the renderer pushes the camera's forward XZ vector (`-sin(yaw), -cos(yaw)`) into the `uCamDir` uniform on every atlas material. The vertex shader computes:
 
 ```glsl
-vFacingLight = 0.9 + abs(dot(aFaceN, uCamDir)) * 0.2;
+vFacingLight = 0.9 + abs(dot(aCellFace.zw, uCamDir)) * 0.2;
 ```
 
 `abs()` ensures walls behind the camera and walls in front are treated identically — only the axis alignment matters, not the facing direction. The result is interpolated across each face and multiplied into the final colour after the AO pass.

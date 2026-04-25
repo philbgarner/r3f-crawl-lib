@@ -201,7 +201,7 @@ export type LayerSpec = {
     direction?: "north" | "south" | "east" | "west",
   ) => LayerFaceResult;
   /**
-   * Whether to attach atlas shader attributes (aTileId, aUvRotation, etc.)
+   * Whether to attach atlas shader attributes (aUvRect, aSurface, etc.)
    * to the instanced geometry.  Defaults to `true` when an atlas was passed
    * to `createDungeonRenderer`, `false` otherwise.
    */
@@ -443,66 +443,39 @@ function buildInstancedMesh(
 
   if (useAtlas) {
     const n = matrices.length;
-    const uvXArr = new Float32Array(n);
-    const uvYArr = new Float32Array(n);
-    const uvWArr = new Float32Array(n);
-    const uvHArr = new Float32Array(n);
+
+    // aUvRect (vec4, 1 slot): .xy = atlas UV origin, .zw = atlas UV size.
+    const uvRectArr = new Float32Array(n * 4);
     uvRects.forEach((r, i) => {
-      uvXArr[i] = r.x;
-      uvYArr[i] = r.y;
-      uvWArr[i] = r.w;
-      uvHArr[i] = r.h;
+      uvRectArr[i * 4]     = r.x;
+      uvRectArr[i * 4 + 1] = r.y;
+      uvRectArr[i * 4 + 2] = r.w;
+      uvRectArr[i * 4 + 3] = r.h;
     });
-    geo.setAttribute("aUvX", new THREE.InstancedBufferAttribute(uvXArr, 1));
-    geo.setAttribute("aUvY", new THREE.InstancedBufferAttribute(uvYArr, 1));
-    geo.setAttribute("aUvW", new THREE.InstancedBufferAttribute(uvWArr, 1));
-    geo.setAttribute("aUvH", new THREE.InstancedBufferAttribute(uvHArr, 1));
+    geo.setAttribute("aUvRect", new THREE.InstancedBufferAttribute(uvRectArr, 4));
 
-    const offsets = heightOffsets ?? new Float32Array(matrices.length);
-    geo.setAttribute(
-      "aHeightOffset",
-      new THREE.InstancedBufferAttribute(offsets, 1),
-    );
-
-    const rotArr = new Float32Array(matrices.length);
-    if (uvRotations)
-      uvRotations.forEach((r, i) => {
-        rotArr[i] = r;
-      });
-    geo.setAttribute(
-      "aUvRotation",
-      new THREE.InstancedBufferAttribute(rotArr, 1),
-    );
-
-    const hsArr = new Float32Array(matrices.length).fill(1.0);
-    if (uvHeightScales)
-      uvHeightScales.forEach((s, i) => {
-        hsArr[i] = s;
-      });
-    geo.setAttribute(
-      "aUvHeightScale",
-      new THREE.InstancedBufferAttribute(hsArr, 1),
-    );
-
-    if (cellX && cellZ) {
-      const cellArr = new Float32Array(n * 2);
-      for (let i = 0; i < n; i++) {
-        cellArr[i * 2]     = cellX[i] ?? 0;
-        cellArr[i * 2 + 1] = cellZ[i] ?? 0;
-      }
-      geo.setAttribute("aCell", new THREE.InstancedBufferAttribute(cellArr, 2));
-    } else {
-      geo.setAttribute("aCell", new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2));
+    // aSurface (vec3, 1 slot): .x=heightOffset, .y=uvRotation, .z=uvHeightScale.
+    const surfaceArr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      surfaceArr[i * 3]     = heightOffsets  ? (heightOffsets[i]  ?? 0)   : 0;
+      surfaceArr[i * 3 + 1] = uvRotations    ? (uvRotations[i]    ?? 0)   : 0;
+      surfaceArr[i * 3 + 2] = uvHeightScales ? (uvHeightScales[i] ?? 1.0) : 1.0;
     }
+    geo.setAttribute("aSurface", new THREE.InstancedBufferAttribute(surfaceArr, 3));
 
-    // aAoCorners: 4 floats per instance [tl, tr, bl, br] in [0,1].
-    // Default to all-ones so uncomputed faces (skirts, layers) are fully lit.
+    // aAoCorners (vec4, 1 slot): [tl, tr, bl, br] in [0,1]; all-ones = fully lit.
     const aoArr = aoCorners ?? new Float32Array(n * 4).fill(1.0);
     geo.setAttribute("aAoCorners", new THREE.InstancedBufferAttribute(aoArr, 4));
 
-    // aFaceN: XZ outward normal per instance (non-zero for walls).
-    const fnArr = faceNormals ?? new Float32Array(n * 2);
-    geo.setAttribute("aFaceN", new THREE.InstancedBufferAttribute(fnArr, 2));
+    // aCellFace (vec4, 1 slot): .xy=grid cell (col,row), .zw=XZ outward face normal.
+    const cellFaceArr = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      cellFaceArr[i * 4]     = cellX       ? (cellX[i]             ?? 0) : 0;
+      cellFaceArr[i * 4 + 1] = cellZ       ? (cellZ[i]             ?? 0) : 0;
+      cellFaceArr[i * 4 + 2] = faceNormals ? (faceNormals[i * 2]   ?? 0) : 0;
+      cellFaceArr[i * 4 + 3] = faceNormals ? (faceNormals[i * 2+1] ?? 0) : 0;
+    }
+    geo.setAttribute("aCellFace", new THREE.InstancedBufferAttribute(cellFaceArr, 4));
   }
 
   const mesh = new THREE.InstancedMesh(geo, material, matrices.length);

@@ -3062,51 +3062,39 @@ function createItem(opts) {
 * WebGL attribute slot budget: 16 total.
 *   Built-ins used by Three.js InstancedMesh:
 *     position (1) + uv (1) + instanceMatrix/mat4 (4) = 6
-*   Custom attributes below = 10 → total 16, exactly at the limit.
-*   Do not add more attributes without removing or repacking existing ones.
+*   Custom attributes: aUvRect(1) + aSurface(1) + aAoCorners(1) + aCellFace(1) = 4
+*   Total used: 10 / 16 — 6 slots remain for future attributes.
+*   Each vec2/vec3/vec4 attribute occupies exactly 1 WebGL slot regardless of component count.
 */
 /**
 * Atlas vertex shader.
 *
 * Responsibilities (in order):
-*   1. Clip UV height for partial-height skirt panels (aUvHeightScale).
+*   1. Clip UV height for partial-height skirt panels (aSurface.z = uvHeightScale).
 *   2. Select the AO corner value for this vertex from aAoCorners.
-*   3. Rotate the tile UV in 90° steps (aUvRotation).
-*   4. Map local UV into the atlas rect (aUvX/Y/W/H).
-*   5. Compute cell-relative overlay UV (aCell / uDungeonSize).
-*   6. Apply height offset in world space (aHeightOffset).
+*   3. Rotate the tile UV in 90° steps (aSurface.y = uvRotation).
+*   4. Map local UV into the atlas rect (aUvRect.xy = origin, aUvRect.zw = size).
+*   5. Compute cell-relative overlay UV (aCellFace.xy / uDungeonSize).
+*   6. Apply height offset in world space (aSurface.x = heightOffset).
 *   7. Compute vFacingLight: fixed for floors/ceilings, dot-product for walls.
 *   8. Output fog distance as eye-space length.
 */
 var BASIC_ATLAS_VERT = `
 // ── Per-instance atlas UV rect ────────────────────────────────────────────────
-// The atlas is divided into tiles; these four floats define the UV-space rect
-// [aUvX, aUvY] + [aUvW, aUvH] of the tile assigned to this instance.
-attribute float aUvX;
-attribute float aUvY;
-attribute float aUvW;
-attribute float aUvH;
+// Atlas tile UV rect packed as a single vec4 (1 slot).
+//   .xy = rect origin (uvX, uvY)   .zw = rect size (uvW, uvH)
+// Packing four floats into one vec4 saves 3 attribute slots vs. separate floats.
+attribute vec4 aUvRect;
 
-// ── Per-instance geometry offsets ────────────────────────────────────────────
-// World-space Y offset applied after the instance matrix transform.
-// Used to shift floors and ceilings to their height-offset positions.
-attribute float aHeightOffset;
-
-// UV rotation index: 0=0°, 1=90°CCW, 2=180°, 3=270°CCW.
-// Applied after height-scale clipping so rotation never fights the clip axis.
-attribute float aUvRotation;
-
-// Fraction of the tile height to show, top-aligned (1.0 = full tile).
-// Skirt panels at step edges show only the top portion so brick rows stay
-// correctly sized rather than stretching to fill a partial panel.
-attribute float aUvHeightScale;
+// ── Per-instance geometry + UV transform ─────────────────────────────────────
+// Three per-face scalars packed into one vec3 (1 slot, saves 2 vs. 3 floats).
+//   .x = heightOffset   — world-space Y shift applied after instance matrix
+//   .y = uvRotation     — UV rotation index: 0=0°, 1=90°CCW, 2=180°, 3=270°CCW
+//   .z = uvHeightScale  — fraction of tile height to show, top-aligned [0,1];
+//                         skirt panels use < 1 so brick rows keep aspect ratio
+attribute vec3 aSurface;
 
 // ── Per-instance overlay / lighting data ─────────────────────────────────────
-// Grid cell (column, row) for this instance. Used to compute the UV into
-// uOverlayLookup so the surface-painter overlay is sampled at the right cell.
-// Packed as vec2 to stay within the 16-attribute WebGL slot limit.
-attribute vec2 aCell;
-
 // Pre-baked ambient-occlusion corner values in face-local UV order:
 //   .x = top-left (uv 0,1), .y = top-right (uv 1,1)
 //   .z = bot-left (uv 0,0), .w = bot-right (uv 1,0)
@@ -3116,13 +3104,12 @@ attribute vec2 aCell;
 // neighbours on each side. Skirt faces default to 1.0 (always fully lit).
 attribute vec4 aAoCorners;
 
-// XZ components of this face's outward unit normal, world space.
-// Non-zero only for wall faces (set in buildInstancedMesh):
-//   North wall (faces +Z): (0,  1)   South wall (faces -Z): ( 0, -1)
-//   West  wall (faces +X): (1,  0)   East  wall (faces -X): (-1,  0)
-// Floor/ceiling instances carry (0,0) — they use uSurfaceLight directly.
-// Packed as vec2 to stay within the 16-attribute WebGL slot limit.
-attribute vec2 aFaceN;
+// Grid cell + face normal packed as a single vec4 (1 slot, saves 1 vs. 2×vec2).
+//   .xy = grid cell (column, row) — used to index into uOverlayLookup
+//   .zw = XZ outward face normal  — non-zero only for wall faces:
+//           North (0, 1)  South (0,-1)  West (1, 0)  East (-1, 0)
+//         Floor/ceiling carry (0,0) and use uSurfaceLight directly.
+attribute vec4 aCellFace;
 
 // ── Uniforms ──────────────────────────────────────────────────────────────────
 // Width and height of the dungeon grid in cells. Used to normalise aCell
@@ -3162,7 +3149,7 @@ void main() {
   // ── 1. Clip UV height for partial skirt panels ─────────────────────────────
   // Scale the Y axis of the UV BEFORE any rotation so the clip always acts on
   // the physical vertical axis of the face, regardless of rotation.
-  float hs = clamp(aUvHeightScale, 0.0, 1.0);
+  float hs = clamp(aSurface.z, 0.0, 1.0);
   vec2 localUv = vec2(uv.x, uv.y * hs);
 
   // ── 2. Select per-corner AO value for this vertex ─────────────────────────
@@ -3175,7 +3162,7 @@ void main() {
   else                                  vAo = aAoCorners.w; // bottom-right
 
   // ── 3. Rotate UV within the tile (0=0°, 1=90°CCW, 2=180°, 3=270°CCW) ──────
-  int iRot = int(floor(aUvRotation + 0.5));
+  int iRot = int(floor(aSurface.y + 0.5));
   if (iRot == 1)      localUv = vec2(localUv.y, 1.0 - localUv.x);
   else if (iRot == 2) localUv = vec2(1.0 - localUv.x, 1.0 - localUv.y);
   else if (iRot == 3) localUv = vec2(1.0 - localUv.y, localUv.x);
@@ -3183,18 +3170,18 @@ void main() {
   vLocalUv = localUv;
 
   // ── 4. Map local UV into the atlas rect ────────────────────────────────────
-  vTileOrigin = vec2(aUvX, aUvY);
-  vTileSize   = vec2(aUvW, aUvH);
+  vTileOrigin = aUvRect.xy;
+  vTileSize   = aUvRect.zw;
   vAtlasUv    = vTileOrigin + localUv * vTileSize;
 
   // ── 5. Overlay UV: cell-centre in normalised dungeon-grid space ────────────
   // Adding 0.5 moves from corner to centre of the cell so the lookup texture
   // is sampled at the right texel for this grid cell.
-  vOverlayUv = (aCell + 0.5) / uDungeonSize;
+  vOverlayUv = (aCellFace.xy + 0.5) / uDungeonSize;
 
   // ── 6. World position + height offset ─────────────────────────────────────
   vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-  worldPos.y   += aHeightOffset;
+  worldPos.y   += aSurface.x;
 
   // ── 7. Fog distance (eye-space length) ────────────────────────────────────
   vec4 eyePos = viewMatrix * worldPos;
@@ -3208,7 +3195,7 @@ void main() {
   // For flat surfaces (uSurfaceLight >= 0): uSurfaceLight is used directly
   // (floor=0.85, ceiling=0.95 by default; configurable via surfaceLighting option).
   if (uSurfaceLight < 0.0) {
-    vFacingLight = uWallLightMin + abs(dot(aFaceN, uCamDir)) * (uWallLightMax - uWallLightMin);
+    vFacingLight = uWallLightMin + abs(dot(aCellFace.zw, uCamDir)) * (uWallLightMax - uWallLightMin);
   } else {
     vFacingLight = uSurfaceLight;
   }
@@ -3901,44 +3888,31 @@ function buildInstancedMesh(matrices, uvRects, material, useAtlas, heightOffsets
 	const geo = new THREE.PlaneGeometry(1, 1);
 	if (useAtlas) {
 		const n = matrices.length;
-		const uvXArr = new Float32Array(n);
-		const uvYArr = new Float32Array(n);
-		const uvWArr = new Float32Array(n);
-		const uvHArr = new Float32Array(n);
+		const uvRectArr = new Float32Array(n * 4);
 		uvRects.forEach((r, i) => {
-			uvXArr[i] = r.x;
-			uvYArr[i] = r.y;
-			uvWArr[i] = r.w;
-			uvHArr[i] = r.h;
+			uvRectArr[i * 4] = r.x;
+			uvRectArr[i * 4 + 1] = r.y;
+			uvRectArr[i * 4 + 2] = r.w;
+			uvRectArr[i * 4 + 3] = r.h;
 		});
-		geo.setAttribute("aUvX", new THREE.InstancedBufferAttribute(uvXArr, 1));
-		geo.setAttribute("aUvY", new THREE.InstancedBufferAttribute(uvYArr, 1));
-		geo.setAttribute("aUvW", new THREE.InstancedBufferAttribute(uvWArr, 1));
-		geo.setAttribute("aUvH", new THREE.InstancedBufferAttribute(uvHArr, 1));
-		const offsets = heightOffsets ?? new Float32Array(matrices.length);
-		geo.setAttribute("aHeightOffset", new THREE.InstancedBufferAttribute(offsets, 1));
-		const rotArr = new Float32Array(matrices.length);
-		if (uvRotations) uvRotations.forEach((r, i) => {
-			rotArr[i] = r;
-		});
-		geo.setAttribute("aUvRotation", new THREE.InstancedBufferAttribute(rotArr, 1));
-		const hsArr = new Float32Array(matrices.length).fill(1);
-		if (uvHeightScales) uvHeightScales.forEach((s, i) => {
-			hsArr[i] = s;
-		});
-		geo.setAttribute("aUvHeightScale", new THREE.InstancedBufferAttribute(hsArr, 1));
-		if (cellX && cellZ) {
-			const cellArr = new Float32Array(n * 2);
-			for (let i = 0; i < n; i++) {
-				cellArr[i * 2] = cellX[i] ?? 0;
-				cellArr[i * 2 + 1] = cellZ[i] ?? 0;
-			}
-			geo.setAttribute("aCell", new THREE.InstancedBufferAttribute(cellArr, 2));
-		} else geo.setAttribute("aCell", new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2));
+		geo.setAttribute("aUvRect", new THREE.InstancedBufferAttribute(uvRectArr, 4));
+		const surfaceArr = new Float32Array(n * 3);
+		for (let i = 0; i < n; i++) {
+			surfaceArr[i * 3] = heightOffsets ? heightOffsets[i] ?? 0 : 0;
+			surfaceArr[i * 3 + 1] = uvRotations ? uvRotations[i] ?? 0 : 0;
+			surfaceArr[i * 3 + 2] = uvHeightScales ? uvHeightScales[i] ?? 1 : 1;
+		}
+		geo.setAttribute("aSurface", new THREE.InstancedBufferAttribute(surfaceArr, 3));
 		const aoArr = aoCorners ?? new Float32Array(n * 4).fill(1);
 		geo.setAttribute("aAoCorners", new THREE.InstancedBufferAttribute(aoArr, 4));
-		const fnArr = faceNormals ?? new Float32Array(n * 2);
-		geo.setAttribute("aFaceN", new THREE.InstancedBufferAttribute(fnArr, 2));
+		const cellFaceArr = new Float32Array(n * 4);
+		for (let i = 0; i < n; i++) {
+			cellFaceArr[i * 4] = cellX ? cellX[i] ?? 0 : 0;
+			cellFaceArr[i * 4 + 1] = cellZ ? cellZ[i] ?? 0 : 0;
+			cellFaceArr[i * 4 + 2] = faceNormals ? faceNormals[i * 2] ?? 0 : 0;
+			cellFaceArr[i * 4 + 3] = faceNormals ? faceNormals[i * 2 + 1] ?? 0 : 0;
+		}
+		geo.setAttribute("aCellFace", new THREE.InstancedBufferAttribute(cellFaceArr, 4));
 	}
 	const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
 	matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
