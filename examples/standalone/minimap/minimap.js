@@ -83,8 +83,8 @@ attachMinimap(game, minimapCanvas, {
   size: 196,
   showEntities: true,
   colors: {
-    explored: "#334",
-    visible: "#aac",
+    floorDim: "#334",
+    floor: "#aac",
     player: "#0f0",
     enemy: "#f44",
   },

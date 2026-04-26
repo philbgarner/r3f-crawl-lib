@@ -216,7 +216,7 @@ Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture)
 ### Minimap with entity overlays
 
 **Files:**
-- `utils/minimap.ts` — `createMinimapState(dungeon)`, explored mask (`Uint8Array`), `updateExplored(fovResult)`; `CrawlLib.attachMinimap(game, canvas, opts)` renders to a 2D canvas
+- `utils/minimap.ts` — `createMinimapState(dungeon)`, explored mask (`Uint8Array`), `updateExplored(fovResult)`; `AtomicCore.attachMinimap(game, canvas, opts)` renders to a 2D canvas
 - `ai/fov.ts` — `computeFov()`, `createVisibilityMask()`; used for minimap reveal and AI line-of-sight
 
 ---
@@ -244,7 +244,7 @@ Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture)
 
 **Files:**
 - `entities/factory.ts` — `createNpc()`, `createEnemy()`, `createMonstersFromMobiles()` internal helper; no built-in monster templates
-- `api/createGame.ts` — `CrawlLib.attachSpawner(game, { onSpawn })`; game loop calls `onSpawn({ dungeon, roomId, x, y })` and adds returned entities via `turns.addActor()`
+- `api/createGame.ts` — `AtomicCore.attachSpawner(game, { onSpawn })`; game loop calls `onSpawn({ dungeon, roomId, x, y })` and adds returned entities via `turns.addActor()`
 
 ---
 
@@ -253,7 +253,7 @@ Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture)
 **Files:**
 - `entities/types.ts` — `Decoration` interface (`id`, `kind: 'decoration'`, `type`, `x`, `z`, `sprite`, `blocksMove`, `blocksView`, `interactive`, `onInteract`); `ObjectPlacement` interface with optional `spriteMap?` field enabling billboard rendering via `renderer.setObjects()`
 - `entities/factory.ts` — `createDecoration()` factory with auto-generated `id`
-- `api/createGame.ts` — `CrawlLib.attachDecorator(game, { onDecorate })`; `game.dungeon.decorations.add()`, `.remove()`, `.list`; `place.billboard(x, z, type, spriteMap, opts?)` places a stationary billboard sprite stored in `game.dungeon.objects`; `game.dungeon.objects` read-only `ObjectPlacement[]` list reset on `regenerate()`
+- `api/createGame.ts` — `AtomicCore.attachDecorator(game, { onDecorate })`; `game.dungeon.decorations.add()`, `.remove()`, `.list`; `place.billboard(x, z, type, spriteMap, opts?)` places a stationary billboard sprite stored in `game.dungeon.objects`; `game.dungeon.objects` read-only `ObjectPlacement[]` list reset on `regenerate()`
 - `rendering/dungeonRenderer.ts` — `renderer.setObjects(objects)` syncs stationary billboard objects; creates `BillboardHandle` for each `ObjectPlacement` with `spriteMap`; RAF loop calls `handle.update()` each frame so sprites always face the camera
 
 ---
@@ -423,7 +423,7 @@ Self-contained save/load layer that wraps a `SerializedDungeon` with all setting
 ### Public API surface
 
 **Files:**
-- `api/createGame.ts` — `CrawlLib.createGame(canvas, options)`; instantiates all subsystems and returns the `game` handle
+- `api/createGame.ts` — `AtomicCore.createGame(canvas, options)`; instantiates all subsystems and returns the `game` handle
 - `api/player.ts` — player handle and action methods
 - `api/actions.ts` — action pipeline middleware
 - `api/keybindings.ts` — DOM keybinding attachment

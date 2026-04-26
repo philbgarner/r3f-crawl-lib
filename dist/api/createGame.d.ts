@@ -233,8 +233,14 @@ export type MinimapOptions = {
     /** Whether to draw entity positions. Default: true. */
     showEntities?: boolean;
     colors?: {
-        explored?: string;
-        visible?: string;
+        /** Floor in current LOS. Default: "#aab" */
+        floor?: string;
+        /** Floor explored but outside LOS. Default: "#445" */
+        floorDim?: string;
+        /** Wall adjacent to a visible cell. Default: "#777" */
+        wall?: string;
+        /** Wall adjacent to explored-only cells. Default: "#333" */
+        wallDim?: string;
         player?: string;
         npc?: string;
         enemy?: string;

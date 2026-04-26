@@ -2615,17 +2615,22 @@ var AtomicCore = (function(exports, three) {
 		const cellW = size / width;
 		const cellH = size / height;
 		const colors = opts.colors ?? {};
-		const exploredColor = colors.explored ?? "#555";
-		const visibleColor = colors.visible ?? "#bbb";
+		const floorColor = colors.floor ?? "#aab";
+		const floorDimColor = colors.floorDim ?? "#445";
+		const wallColor = colors.wall ?? "#777";
+		const wallDimColor = colors.wallDim ?? "#333";
 		const playerColor = colors.player ?? "#0f0";
 		const npcColor = colors.npc ?? "#08f";
 		const enemyColor = colors.enemy ?? "#f44";
 		ctx.clearRect(0, 0, size, size);
+		const flags = internal.colliderFlagsData;
 		for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
 			const i = y * width + x;
-			if (minimap.visible[i]) ctx.fillStyle = visibleColor;
-			else if (minimap.explored[i]) ctx.fillStyle = exploredColor;
-			else continue;
+			const isVisible = minimap.visible[i] !== 0;
+			const isExplored = minimap.explored[i] !== 0;
+			if (!isVisible && !isExplored) continue;
+			if (!flags || isWalkableCell(flags[i] ?? 2)) ctx.fillStyle = isVisible ? floorColor : floorDimColor;
+			else ctx.fillStyle = isVisible ? wallColor : wallDimColor;
 			ctx.fillRect(x * cellW, y * cellH, Math.ceil(cellW), Math.ceil(cellH));
 		}
 		if (opts.showEntities !== false && internal.turnState) for (const actor of Object.values(internal.turnState.actors)) {

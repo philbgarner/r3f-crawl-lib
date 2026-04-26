@@ -1104,8 +1104,14 @@ export type MinimapOptions = {
   /** Whether to draw entity positions. Default: true. */
   showEntities?: boolean;
   colors?: {
-    explored?: string;
-    visible?: string;
+    /** Floor in current LOS. Default: "#aab" */
+    floor?: string;
+    /** Floor explored but outside LOS. Default: "#445" */
+    floorDim?: string;
+    /** Wall adjacent to a visible cell. Default: "#777" */
+    wall?: string;
+    /** Wall adjacent to explored-only cells. Default: "#333" */
+    wallDim?: string;
     player?: string;
     npc?: string;
     enemy?: string;
@@ -1129,23 +1135,33 @@ function drawMinimap(
   const cellH = size / height;
 
   const colors = opts.colors ?? {};
-  const exploredColor = colors.explored ?? "#555";
-  const visibleColor  = colors.visible  ?? "#bbb";
+  const floorColor    = colors.floor    ?? "#aab";
+  const floorDimColor = colors.floorDim ?? "#445";
+  const wallColor     = colors.wall     ?? "#777";
+  const wallDimColor  = colors.wallDim  ?? "#333";
   const playerColor   = colors.player   ?? "#0f0";
   const npcColor      = colors.npc      ?? "#08f";
   const enemyColor    = colors.enemy    ?? "#f44";
 
   ctx.clearRect(0, 0, size, size);
 
+  const flags = internal.colliderFlagsData;
+
+  // Single pass: the FOV visits wall cells as well as floor cells, so
+  // explored/visible is set for both types.  Use isWalkableCell to pick the
+  // right colour; walls and floors are never the same shade.
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = y * width + x;
-      if (minimap.visible[i]) {
-        ctx.fillStyle = visibleColor;
-      } else if (minimap.explored[i]) {
-        ctx.fillStyle = exploredColor;
+      const isVisible  = minimap.visible[i]  !== 0;
+      const isExplored = minimap.explored[i] !== 0;
+      if (!isVisible && !isExplored) continue;
+
+      const isFloor = !flags || isWalkableCell(flags[i] ?? 0x02);
+      if (isFloor) {
+        ctx.fillStyle = isVisible ? floorColor : floorDimColor;
       } else {
-        continue;
+        ctx.fillStyle = isVisible ? wallColor : wallDimColor;
       }
       ctx.fillRect(x * cellW, y * cellH, Math.ceil(cellW), Math.ceil(cellH));
     }
