@@ -214,9 +214,11 @@ export function createBillboard(
       group.rotation.set(0, cameraYaw, 0, "YXZ");
 
       // Scale layers to world-unit sprite size, preserving frameSize aspect ratio.
-      const aspect = spriteMap.frameSize.w / spriteMap.frameSize.h;
-      const sprW = tileSize * aspect;
-      const sprH = tileSize;
+      // no longer do this. the artist decides the scaling, which by default should be tilesize if it's a full-size monster
+	  // we should probably use the actual sprite sizes, but we'll use the passed frameSize and thus allow tiny and large-sized monsters
+	  // to exist.
+      const sprW = spriteMap.frameSize.w;
+      const sprH = spriteMap.frameSize.h;
 
       // Determine active angle key for override lookup.
       const facing = (ent as { facing?: number }).facing ?? 0;
