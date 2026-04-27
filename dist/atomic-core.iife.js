@@ -3803,8 +3803,8 @@ void main() {
 				}).y) * tileSize;
 				group.position.set(wx, wy, wz);
 				group.rotation.set(0, cameraYaw, 0, "YXZ");
-				const sprW = spriteMap.frameSize.w;
-				const sprH = spriteMap.frameSize.h;
+				const sprW = tileSize * (spriteMap.frameSize.w / 64);
+				const sprH = tileSize * (spriteMap.frameSize.h / 64);
 				const angleKey = selectAngleKey(ent.facing ?? 0, cameraYaw);
 				const overrides = spriteMap.angles?.[angleKey];
 				for (const entry of layerEntries) {
