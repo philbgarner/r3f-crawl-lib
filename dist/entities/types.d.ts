@@ -3,30 +3,27 @@ export type { SpriteMap } from '../rendering/billboardSprites';
 export type EntityKind = "player" | "npc" | "enemy" | "decoration";
 /**
  * Unified base for every game entity.
- * Fields are a superset of the old ActorBase + MonsterActor + MobilePlacement.
- * hp/maxHp/attack/defense default to 0 for non-combat entities (decorations).
+ *
+ * Engine fields (id, kind, faction, spriteName, x, z, alive, blocksMove, speed,
+ * tick, spriteMap) are explicitly typed. All game-specific attributes — hp,
+ * maxHp, attack, defense, xp, etc. — are stored via the index signature and
+ * typed as `unknown`; cast them to the concrete type your game uses.
  */
 export type EntityBase = {
     id: string;
     /** Category of entity. */
     kind: EntityKind;
-    /** Specific entity type key (e.g. "goblin", "chest", "torch"). */
-    type: string;
-    /** Sprite atlas key or tile id. */
-    sprite: string | number;
+    /** Faction id used for stance/combat resolution. */
+    faction: string;
+    /** Sprite atlas name resolved through the tile-atlas resolver in the renderer. */
+    spriteName: string;
     x: number;
     /** Ground-plane axis (maps to world Z in the 3-D renderer). */
     z: number;
-    hp: number;
-    maxHp: number;
-    attack: number;
-    defense: number;
     /** >0; higher speed = acts more often in the turn scheduler. */
     speed: number;
     alive: boolean;
     blocksMove: boolean;
-    /** Faction id used for stance/combat resolution. */
-    faction: string;
     /** Turn-scheduler tick counter; incremented by the scheduler on each action. */
     tick: number;
     /**
@@ -34,6 +31,8 @@ export type EntityBase = {
      * camera-facing billboard quad with layered sprite support.
      */
     spriteMap?: SpriteMap;
+    /** Developer-defined attributes (hp, maxHp, attack, xp, etc.). */
+    [key: string]: unknown;
 };
 /**
  * Alert state machine:

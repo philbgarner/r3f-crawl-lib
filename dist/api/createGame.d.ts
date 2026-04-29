@@ -3,10 +3,9 @@ import { TiledMapOptions } from '../dungeon/tiled';
 import { TurnAction } from '../turn/types';
 import { EventEmitter } from '../events/eventEmitter';
 import { FactionRegistry } from '../combat/factions';
-import { DamageFormula } from '../combat/combat';
+import { CombatResolver } from '../combat/combat';
 import { HiddenPassage, ObjectPlacement, EntityBase } from '../entities/types';
 import { SpriteMap } from '../rendering/billboardSprites';
-import { DecorationEntity } from '../entities/factory';
 import { PlayerHandle } from './player';
 import { KeybindingsOptions } from './keybindings';
 import { ActionTransport } from '../transport/types';
@@ -24,9 +23,9 @@ export type PublicRoom = {
     connections: number[];
 };
 export type DecorationList = {
-    add(decoration: DecorationEntity): void;
+    add(decoration: EntityBase): void;
     remove(id: string): void;
-    list: DecorationEntity[];
+    list: EntityBase[];
 };
 export type PassageList = {
     toggle(id: number): void;
@@ -61,9 +60,6 @@ export type TurnsHandle = {
     commit(action: TurnAction): Promise<void>;
     addActor(entity: EntityBase): void;
     removeActor(id: string): void;
-};
-export type CombatHandle = {
-    factions: FactionRegistry;
 };
 export type PlayerOptions = {
     /** Override the auto-generated player ID. Required when using a transport
@@ -112,8 +108,13 @@ export type DungeonOptions = (BspDungeonOptions & {
     onPlace?: (ctx: OnPlaceContext) => void;
 };
 export type CombatOptions = {
-    damageFormula?: DamageFormula;
-    factions?: Array<[string, string, "hostile" | "neutral" | "friendly"]>;
+    /**
+     * Custom combat resolver. Receives attacker, defender, and engine context;
+     * returns a CombatResult. The engine applies hp reduction and alive flag
+     * from the result. When omitted, the engine performs a faction-stance check
+     * only — non-hostile attacks are blocked, hostile attacks produce no damage.
+     */
+    resolver?: CombatResolver;
     onDamage?: (args: {
         attacker: EntityBase;
         defender: EntityBase;
@@ -180,7 +181,8 @@ export type GameHandle = {
     turns: TurnsHandle;
     dungeon: DungeonHandle;
     events: EventEmitter;
-    combat: CombatHandle;
+    /** Faction registry — set stances at runtime before or after generate(). */
+    factions: FactionRegistry;
     /** Mission/quest system. Add evaluator-driven missions that auto-complete each turn. */
     missions: MissionsHandle;
     /**
@@ -211,7 +213,7 @@ type DecoratorCallback = (ctx: {
     roomId: number;
     x: number;
     y: number;
-}) => DecorationEntity | DecorationEntity[] | null | undefined;
+}) => EntityBase | EntityBase[] | null | undefined;
 /** Per-surface overlay tile names for a single cell. Each key is optional. */
 export type SurfacePaintTarget = {
     /** Tile names to overlay on the floor face of this cell. Up to 4. */

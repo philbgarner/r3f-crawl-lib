@@ -1,82 +1,40 @@
-import { EntityBase, SpriteMap } from './types';
-import { RpsEffect } from './effects';
-type BaseOpts = {
-    type: string;
-    sprite: string | number;
+import { EntityBase, EntityKind, SpriteMap } from './types';
+/**
+ * Required and optional engine-level fields for createEntity().
+ * Any additional keys (hp, maxHp, attack, xp, …) are passed through verbatim
+ * and stored on the entity via its index signature.
+ */
+export type EntityCoreOpts = {
+    /** Entity category — drives AI and rendering behaviour. */
+    kind: EntityKind;
+    /** Faction id used for stance/combat resolution. */
+    faction: string;
+    /** Sprite atlas name resolved through the tile-atlas resolver in the renderer. */
+    spriteName: string;
     x: number;
     z: number;
-    faction?: string;
+    /** Whether this entity participates in the turn scheduler. Default: `true`. */
+    alive?: boolean;
+    /** Whether this entity blocks movement. Default: `false`. */
+    blocksMove?: boolean;
+    /** Turn priority; higher = acts more often. Default: `1`. */
+    speed?: number;
     spriteMap?: SpriteMap;
 };
-/** Options for `createNpc()`. Extends the shared base (type, sprite, x, z). */
-export type NpcOpts = BaseOpts & {
-    /** Starting HP. Defaults to `maxHp`. */
-    hp?: number;
-    /** Maximum HP. Default: 10. */
-    maxHp?: number;
-    /** Attack stat. Default: 0 (non-combatant). */
-    attack?: number;
-    /** Defense stat. Default: 0. */
-    defense?: number;
-    /** Turn speed (lower = acts more often). Default: 5. */
-    speed?: number;
-    /** Whether this NPC blocks player movement. Default: `true`. */
-    blocksMove?: boolean;
-};
-/** Create a friendly or neutral NPC entity. */
-export declare function createNpc(opts: NpcOpts): EntityBase;
-/** Options for `createEnemy()`. Extends the shared base (type, sprite, x, z). */
-export type EnemyOpts = BaseOpts & {
-    /** Starting HP. Defaults to `maxHp`. */
-    hp?: number;
-    /** Maximum HP. Default: 10. */
-    maxHp?: number;
-    /** Attack stat. Default: 3. */
-    attack?: number;
-    /** Defense stat. Default: 0. */
-    defense?: number;
-    /** Turn speed (lower = acts more often). Default: 7. */
-    speed?: number;
-    /** Whether this enemy blocks player movement. Default: `true`. */
-    blocksMove?: boolean;
-    /** 0–10 scale — influences detection radius and persistence. Default: 1. */
-    danger?: number;
-    /** XP awarded on kill. Default: 10. */
-    xp?: number;
-    rpsEffect?: RpsEffect;
-};
 /**
- * An EnemyEntity is an EntityBase with additional combat fields stored in
- * a typed extension. The core EntityBase fields cover hp/attack/defense/speed.
+ * Create a game entity.
+ *
+ * Supply the engine-level fields via `EntityCoreOpts` plus any game-specific
+ * attributes (hp, maxHp, attack, xp, …) as additional keys. All extra keys
+ * are spread onto the returned entity verbatim and accessible via the index
+ * signature on `EntityBase`.
+ *
+ * ```ts
+ * const orc = createEntity({
+ *   kind: "enemy", faction: "enemy", spriteName: "orc_idle", x: 8, z: 2,
+ *   hp: 15, maxHp: 15, attack: 5, xp: 25,
+ * });
+ * ```
  */
-export type EnemyEntity = EntityBase & {
-    danger: number;
-    xp: number;
-    rpsEffect: RpsEffect;
-    alertState: "idle" | "chasing" | "searching";
-    searchTurnsLeft: number;
-    lastKnownPlayerPos: {
-        x: number;
-        y: number;
-    } | null;
-};
-/** Create an enemy entity. */
-export declare function createEnemy(opts: EnemyOpts): EnemyEntity;
-/** Options for `createDecoration()`. Extends the shared base (type, sprite, x, z). */
-export type DecorationOpts = BaseOpts & {
-    /** Whether this decoration blocks player movement. Default: `false`. */
-    blocksMove?: boolean;
-    /** Yaw rotation in radians. Default: 0. */
-    yaw?: number;
-    /** Uniform scale multiplier. Default: 1. */
-    scale?: number;
-};
-/** A stationary decoration entity (torch, pillar, furniture, etc.). */
-export type DecorationEntity = EntityBase & {
-    yaw: number;
-    scale: number;
-};
-/** Create a stationary decoration entity. Decorations are not alive in the turn sense. */
-export declare function createDecoration(opts: DecorationOpts): DecorationEntity;
-export {};
+export declare function createEntity(opts: EntityCoreOpts & Record<string, unknown>): EntityBase;
 //# sourceMappingURL=factory.d.ts.map

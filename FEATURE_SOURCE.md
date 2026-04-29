@@ -201,19 +201,19 @@ Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture)
 ### Entity system: player, NPCs, enemies, items, chests
 
 **Files:**
-- `api/player.ts` — reactive player handle (`x`, `z`, `hp`, `facing`, `inventory`, `alive`), action methods (`move`, `rotate`, `interact`, `wait`, `pickup`, `useItem`, `dropItem`, `heal`)
-- `entities/types.ts` — unified entity base interface (`id`, `kind`, `type`, `sprite`, `x`, `z`, `hp`, `maxHp`, `attack`, `defense`, `speed`, `alive`, `blocksMove`, `faction`, `tick`, optional `spriteMap`), `Decoration`, `ObjectPlacement`, `MobilePlacement`, `HiddenPassage`; re-exports `SpriteMap` from `rendering/billboardSprites.ts`
-- `entities/factory.ts` — `createNpc()`, `createEnemy()`, `createDecoration()`, `createMonstersFromMobiles()` (internal Tiled helper)
+- `api/player.ts` — reactive player handle (`x`, `z`, `hp`, `facing`, `inventory`, `alive`), action methods (`move`, `rotate`, `interact`, `wait`, `pickup`, `useItem`, `dropItem`, `heal`); `hp`/`maxHp` read from entity index signature
+- `entities/types.ts` — unified entity base interface (`id`, `kind`, `faction`, `spriteName`, `x`, `z`, `speed`, `alive`, `blocksMove`, `tick`, optional `spriteMap`, plus index signature `[key: string]: unknown` for dev-defined attributes like `hp`, `attack`, `xp`); `ObjectPlacement`, `MobilePlacement`, `HiddenPassage`; re-exports `SpriteMap` from `rendering/billboardSprites.ts`
+- `entities/factory.ts` — `createEntity(opts: EntityCoreOpts & Record<string, unknown>): EntityBase`; single factory, no stat defaults; engine fields (`kind`, `faction`, `spriteName`, `x`, `z`, optional `alive`/`blocksMove`/`speed`/`spriteMap`) plus any extra keys spread verbatim onto the entity
 - `entities/inventory.ts` — `Item`, `ItemType`, `InventorySlot`, `createItem()`, `rollLoot()`
 - `entities/effects.ts` — `ActiveEffect`, `applyEffect()`, `tickEffects()`, `StackMode`, `RpsEffect`
 
 ---
 
-### Three-faction combat model
+### Pluggable combat model
 
 **Files:**
-- `combat/factions.ts` — `FactionRegistry`, `FactionStance`, `createFactionRegistry()`, `createFactionRegistryFromTable()`; default table: player/npc hostile to enemy, enemy hostile to player/npc
-- `combat/combat.ts` — `resolveCombat({ attacker, defender, formula, factions, emit })`; damage formula, faction check, death handling, event emission
+- `combat/factions.ts` — `FactionRegistry`, `FactionStance`, `FactionId`; `createFactionRegistry()` (empty registry, dev defines all stances); `createFactionRegistryFromTable()` convenience builder; no `DEFAULT_FACTION_TABLE` — dev owns all faction relationships; `game.factions` is the top-level handle on the game object
+- `combat/combat.ts` — `CombatResolver` function type `(attacker, defender, ctx) => CombatResult`; `CombatResolverContext { emit, factions }`; `CombatResult` union (`blocked` | `miss` | `hit`); `resolveCombat({ attacker, defender, damage, defenderHp, factions, emit })` utility for event emission + faction check when the caller pre-computes damage; no default damage formula — stat field names are dev-defined; `CombatOptions.resolver` replaces the old `damageFormula` option; engine fallback (no resolver) performs stance check only, no damage
 - `entities/effects.ts` — `RpsEffect` and status effect application called from combat resolution
 - `turn/events.ts` — `DamageEvent`, `MissEvent`, `DeathEvent`, `XpGainEvent`, `HealEvent` emitted by combat
 
@@ -258,7 +258,7 @@ Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture)
 ### Callback-driven enemy spawning
 
 **Files:**
-- `entities/factory.ts` — `createNpc()`, `createEnemy()`, `createMonstersFromMobiles()` internal helper; no built-in monster templates
+- `entities/factory.ts` — `createEntity()` single factory; no built-in monster templates or stat defaults
 - `api/createGame.ts` — `AtomicCore.attachSpawner(game, { onSpawn })`; game loop calls `onSpawn({ dungeon, roomId, x, y })` and adds returned entities via `turns.addActor()`
 
 ---
@@ -266,9 +266,9 @@ Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture)
 ### Stationary decoration entities
 
 **Files:**
-- `entities/types.ts` — `Decoration` interface (`id`, `kind: 'decoration'`, `type`, `x`, `z`, `sprite`, `blocksMove`, `blocksView`, `interactive`, `onInteract`); `ObjectPlacement` interface with optional `spriteMap?` field enabling billboard rendering via `renderer.setObjects()`
-- `entities/factory.ts` — `createDecoration()` factory with auto-generated `id`
-- `api/createGame.ts` — `AtomicCore.attachDecorator(game, { onDecorate })`; `game.dungeon.decorations.add()`, `.remove()`, `.list`; `place.billboard(x, z, type, spriteMap, opts?)` places a stationary billboard sprite stored in `game.dungeon.objects`; `game.dungeon.objects` read-only `ObjectPlacement[]` list reset on `regenerate()`
+- `entities/types.ts` — `ObjectPlacement` interface with optional `spriteMap?` field enabling billboard rendering via `renderer.setObjects()`; decorations are plain `EntityBase` with `kind: 'decoration'`
+- `entities/factory.ts` — `createEntity()` with `kind: "decoration"` and `alive: false` for stationary decorations; auto-generated `id`
+- `api/createGame.ts` — `AtomicCore.attachDecorator(game, { onDecorate })`; `game.dungeon.decorations.add()`, `.remove()`, `.list` (all `EntityBase`); `place.billboard(x, z, type, spriteMap, opts?)` places a stationary billboard sprite stored in `game.dungeon.objects`; `game.dungeon.objects` read-only `ObjectPlacement[]` list reset on `regenerate()`
 - `rendering/dungeonRenderer.ts` — `renderer.setObjects(objects)` syncs stationary billboard objects; creates `BillboardHandle` for each `ObjectPlacement` with `spriteMap`; RAF loop calls `handle.update()` each frame so sprites always face the camera
 
 ---
@@ -442,4 +442,4 @@ Self-contained save/load layer that wraps a `SerializedDungeon` with all setting
 - `api/player.ts` — player handle and action methods
 - `api/actions.ts` — action pipeline middleware
 - `api/keybindings.ts` — DOM keybinding attachment
-- `index.ts` — re-exports the public `AtomicCore` namespace: `createGame`, `attachMinimap`, `attachSpawner`, `attachDecorator`, `attachSurfacePainter`, `attachKeybindings`, `createNpc`, `createEnemy`, `createDecoration`, `createItem`, `buildTilesetMap`, `createWebSocketTransport`, `packedAtlasResolver`, `loadSkybox`; types: `SkyboxFaces`, `SkyboxOptions`
+- `index.ts` — re-exports the public `AtomicCore` namespace: `createGame`, `attachMinimap`, `attachSpawner`, `attachDecorator`, `attachSurfacePainter`, `attachKeybindings`, `createEntity`, `createItem`, `createFactionRegistry`, `createFactionRegistryFromTable`, `createWebSocketTransport`, `packedAtlasResolver`, `loadSkybox`; types: `EntityCoreOpts`, `CombatResolver`, `CombatResolverContext`, `CombatResult`, `FactionRegistry`, `FactionStance`, `FactionId`, `SkyboxFaces`, `SkyboxOptions`

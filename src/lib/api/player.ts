@@ -63,8 +63,8 @@ export function createPlayerHandle(state: PlayerState): PlayerHandle {
   return {
     get x()         { return state.entity.x; },
     get z()         { return state.entity.z; },
-    get hp()        { return state.entity.hp; },
-    get maxHp()     { return state.entity.maxHp; },
+    get hp()        { return (state.entity as Record<string, unknown>).hp as number ?? 0; },
+    get maxHp()     { return (state.entity as Record<string, unknown>).maxHp as number ?? 0; },
     get facing()    { return state.facing; },
     get alive()     { return state.entity.alive; },
     get inventory() { return state.inventory; },

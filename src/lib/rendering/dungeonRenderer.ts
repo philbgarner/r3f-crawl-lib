@@ -1654,7 +1654,8 @@ export function createDungeonRenderer(
   const entityMatCache = new Map<string, THREE.MeshStandardMaterial>();
 
   function resolveAppearanceKey(e: EntityBase): string {
-    if (appearances[e.type]) return e.type;
+    const type = (e as Record<string, unknown>).type as string | undefined;
+    if (type && appearances[type]) return type;
     if (appearances[e.kind]) return e.kind;
     return "__default__";
   }
@@ -1706,16 +1707,16 @@ export function createDungeonRenderer(
         const fakeEntity: EntityBase & { spriteMap: SpriteMap } = {
           id: key,
           kind: "decoration",
-          type: obj.type,
-          sprite: obj.type,
+          spriteName: obj.type,
+          faction: "none",
           x: obj.x,
           z: obj.z,
-          hp: 0, maxHp: 0, attack: 0, defense: 0,
-          speed: 0, alive: true,
+          speed: 0,
+          alive: true,
           blocksMove: false,
-          faction: "none",
           tick: 0,
           spriteMap: obj.spriteMap,
+          type: obj.type,
         };
         objectBillboardMap.set(key, createBillboard(fakeEntity, packedAtlas, scene, resolver));
       }
@@ -1840,7 +1841,7 @@ export function createDungeonRenderer(
       for (const obj of currentObjects) {
         if (!obj.spriteMap) continue;
         const handle = objectBillboardMap.get(`${obj.type}_${obj.x}_${obj.z}`);
-        if (handle) handle.update(obj as EntityBase, curYaw, tileSize, ceilingH);
+        if (handle) handle.update(obj as unknown as EntityBase, curYaw, tileSize, ceilingH);
       }
     }
 

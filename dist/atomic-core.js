@@ -1070,89 +1070,6 @@ function createFactionRegistryFromTable(table) {
 	for (const [from, to, stance] of table) registry.setStance(from, to, stance);
 	return registry;
 }
-/**
-* Default three-faction combat table:
-*   player  → enemy:   hostile
-*   npc     → enemy:   hostile
-*   enemy   → player:  hostile
-*   enemy   → npc:     hostile
-*
-* All other relationships default to "neutral".
-* Pass this to createFactionRegistryFromTable() or supply your own table
-* via the `combat.factions` option in createGame().
-*/
-var DEFAULT_FACTION_TABLE = [
-	[
-		"player",
-		"enemy",
-		"hostile"
-	],
-	[
-		"npc",
-		"enemy",
-		"hostile"
-	],
-	[
-		"enemy",
-		"player",
-		"hostile"
-	],
-	[
-		"enemy",
-		"npc",
-		"hostile"
-	]
-];
-//#endregion
-//#region src/lib/combat/combat.ts
-/** Default formula: max(1, attacker.attack − defender.defense). Never misses. */
-var defaultDamageFormula = (attacker, defender) => Math.max(1, attacker.attack - defender.defense);
-/**
-* Resolve one attack from `attacker` against `defender`.
-*
-* - If `factions` is provided and attacker is NOT hostile to defender, returns `{ outcome: "blocked" }`.
-* - If the formula returns 0, emits `miss` and returns `{ outcome: "miss" }`.
-* - Otherwise emits `damage` (and `death` if hp drops to 0) and returns `{ outcome: "hit", ... }`.
-*
-* The returned `defenderDied` flag reflects whether hp reached 0; the caller is
-* responsible for updating entity state (this function is pure/side-effect-free
-* aside from the EventEmitter calls).
-*/
-function resolveCombat({ attacker, defender, formula = defaultDamageFormula, factions, emit }) {
-	if (factions && !factions.isHostile(attacker.faction, defender.faction)) return { outcome: "blocked" };
-	const damage = formula(attacker, defender);
-	if (damage <= 0) {
-		emit.emit("miss", {
-			attacker,
-			defender
-		});
-		return { outcome: "miss" };
-	}
-	const defenderDied = defender.hp - damage <= 0;
-	emit.emit("damage", {
-		entity: defender,
-		amount: damage
-	});
-	emit.emit("audio", {
-		name: "hit",
-		position: [defender.x, defender.z]
-	});
-	if (defenderDied) {
-		emit.emit("death", {
-			entity: defender,
-			killer: attacker
-		});
-		emit.emit("audio", {
-			name: "death",
-			position: [defender.x, defender.z]
-		});
-	}
-	return {
-		outcome: "hit",
-		damage,
-		defenderDied
-	};
-}
 //#endregion
 //#region src/lib/utils/geometry.ts
 /**
@@ -1732,10 +1649,10 @@ function createPlayerHandle(state) {
 			return state.entity.z;
 		},
 		get hp() {
-			return state.entity.hp;
+			return state.entity.hp ?? 0;
 		},
 		get maxHp() {
-			return state.entity.maxHp;
+			return state.entity.maxHp ?? 0;
 		},
 		get facing() {
 			return state.facing;
@@ -1978,27 +1895,32 @@ function buildPlayerActor(id, opts) {
 	};
 }
 function entityToMonsterActor(e) {
+	const ev = e;
 	return {
 		id: e.id,
 		kind: "monster",
-		name: e.type,
-		glyph: e.type[0] ?? "?",
+		name: ev.type ?? e.kind,
+		glyph: ev.type?.[0] ?? e.kind[0] ?? "?",
 		x: e.x,
 		y: e.z,
 		speed: e.speed > 0 ? e.speed : 5,
 		alive: e.alive,
 		blocksMovement: e.blocksMove,
-		hp: e.hp,
-		maxHp: e.maxHp,
-		attack: e.attack,
-		defense: e.defense,
-		xp: e.xp ?? 0,
-		danger: e.danger ?? 1,
+		hp: ev.hp ?? 0,
+		maxHp: ev.maxHp ?? 0,
+		attack: ev.attack ?? 0,
+		defense: ev.defense ?? 0,
+		xp: ev.xp ?? 0,
+		danger: ev.danger ?? 1,
 		alertState: "idle",
 		rpsEffect: "none",
 		searchTurnsLeft: 0,
 		lastKnownPlayerPos: null
 	};
+}
+function fallbackCombat(attacker, defender, factions) {
+	if (!factions.isHostile(attacker.faction, defender.faction)) return { outcome: "blocked" };
+	return { outcome: "miss" };
 }
 function makeApplyAction(internal, combatOpts, onAnimEvent) {
 	return function customApplyAction(state, actorId, action, deps) {
@@ -2024,7 +1946,8 @@ function makeApplyAction(internal, combatOpts, onAnimEvent) {
 				if (action.targetId !== void 0) {
 					const target = internal.entityById.get(action.targetId);
 					if (target) {
-						if (target.type === "chest") {
+						const targetType = target.type;
+						if (targetType === "chest") {
 							internal.events.emit("chest-open", {
 								chest: target,
 								loot: []
@@ -2033,7 +1956,7 @@ function makeApplyAction(internal, combatOpts, onAnimEvent) {
 								name: "chest-open",
 								position: [target.x, target.z]
 							});
-						} else if (target.type === "door") internal.events.emit("audio", {
+						} else if (targetType === "door") internal.events.emit("audio", {
 							name: "door-open",
 							position: [target.x, target.z]
 						});
@@ -2052,15 +1975,15 @@ function makeApplyAction(internal, combatOpts, onAnimEvent) {
 			const attackerEntity = internal.entityById.get(actorId);
 			const defenderEntity = internal.entityById.get(targetActor.id);
 			if (attackerEntity && defenderEntity) {
-				const result = resolveCombat({
-					attacker: attackerEntity,
-					defender: defenderEntity,
-					...combatOpts?.damageFormula ? { formula: combatOpts.damageFormula } : {},
-					factions: internal.factions,
-					emit: internal.events
-				});
+				const ctx = {
+					emit: internal.events,
+					factions: internal.factions
+				};
+				const result = combatOpts?.resolver ? combatOpts.resolver(attackerEntity, defenderEntity, ctx) : fallbackCombat(attackerEntity, defenderEntity, internal.factions);
 				if (result.outcome === "hit") {
-					defenderEntity.hp = Math.max(0, defenderEntity.hp - result.damage);
+					const defEv = defenderEntity;
+					const currentHp = defEv.hp ?? 0;
+					defEv.hp = Math.max(0, currentHp - result.damage);
 					if (result.defenderDied) defenderEntity.alive = false;
 					onAnimEvent?.({
 						kind: "attack",
@@ -2089,7 +2012,7 @@ function makeApplyAction(internal, combatOpts, onAnimEvent) {
 							killer: attackerEntity
 						});
 						if (actorId === internal.playerActorId) {
-							const xp = defenderEntity.xp ?? 0;
+							const xp = defEv.xp ?? 0;
 							if (xp > 0) {
 								onAnimEvent?.({
 									kind: "xp-gain",
@@ -2110,7 +2033,7 @@ function makeApplyAction(internal, combatOpts, onAnimEvent) {
 					}
 					const updatedDefender = {
 						...state.actors[targetActor.id],
-						hp: defenderEntity.hp,
+						hp: defEv.hp ?? 0,
 						alive: defenderEntity.alive
 					};
 					return {
@@ -2426,21 +2349,15 @@ function runGenerate(internal, dungeonHandle, turnsHandle) {
 					dungeonHandle.decorations.add({
 						id: `obj_${type}_${x}_${z}`,
 						kind: "decoration",
-						type,
-						sprite: type,
+						spriteName: type,
+						faction: "none",
 						x,
 						z,
-						hp: 0,
-						maxHp: 0,
-						attack: 0,
-						defense: 0,
 						speed: 0,
 						alive: false,
 						blocksMove: false,
-						faction: "none",
 						tick: 0,
-						yaw: 0,
-						scale: 1,
+						type,
 						...meta ?? {}
 					});
 				},
@@ -2457,19 +2374,16 @@ function runGenerate(internal, dungeonHandle, turnsHandle) {
 					const entity = {
 						id: `npc_${type}_${x}_${z}`,
 						kind: "npc",
-						type,
-						sprite: type,
+						spriteName: opts?.spriteName ?? type,
+						faction: opts?.faction ?? "npc",
 						x,
 						z,
-						hp: opts?.hp ?? 10,
-						maxHp: opts?.maxHp ?? 10,
-						attack: opts?.attack ?? 0,
-						defense: opts?.defense ?? 0,
 						speed: opts?.speed ?? 5,
 						alive: true,
 						blocksMove: true,
-						faction: "npc",
-						tick: 0
+						tick: 0,
+						type,
+						...opts
 					};
 					turnsHandle.addActor(entity);
 				},
@@ -2477,19 +2391,16 @@ function runGenerate(internal, dungeonHandle, turnsHandle) {
 					const entity = {
 						id: `enemy_${type}_${x}_${z}`,
 						kind: "enemy",
-						type,
-						sprite: type,
+						spriteName: opts?.spriteName ?? type,
+						faction: opts?.faction ?? "enemy",
 						x,
 						z,
-						hp: opts?.hp ?? 10,
-						maxHp: opts?.maxHp ?? 10,
-						attack: opts?.attack ?? 3,
-						defense: opts?.defense ?? 0,
 						speed: opts?.speed ?? 7,
 						alive: true,
 						blocksMove: true,
-						faction: "enemy",
-						tick: 0
+						tick: 0,
+						type,
+						...opts
 					};
 					turnsHandle.addActor(entity);
 				},
@@ -2497,21 +2408,16 @@ function runGenerate(internal, dungeonHandle, turnsHandle) {
 					dungeonHandle.decorations.add({
 						id: `deco_${type}_${x}_${z}`,
 						kind: "decoration",
-						type,
-						sprite: type,
+						spriteName: opts?.spriteName ?? type,
+						faction: "none",
 						x,
 						z,
-						hp: 0,
-						maxHp: 0,
-						attack: 0,
-						defense: 0,
 						speed: 0,
 						alive: false,
 						blocksMove: opts?.blocksMove ?? false,
-						faction: "none",
 						tick: 0,
-						yaw: opts?.yaw ?? 0,
-						scale: opts?.scale ?? 1
+						type,
+						...opts
 					});
 				},
 				surface(x, z, layers) {
@@ -2625,25 +2531,24 @@ function drawMinimap(internal, canvas, opts) {
 */
 function createGame(canvas, options) {
 	const events = createEventEmitter();
-	const factions = createFactionRegistryFromTable(options.combat?.factions ?? DEFAULT_FACTION_TABLE);
+	const factions = createFactionRegistry();
 	const playerOpts = options.player ?? {};
 	const playerActorId = playerOpts.id ?? "player";
 	const playerEntity = {
 		id: playerActorId,
 		kind: "player",
-		type: "player",
-		sprite: "player",
+		spriteName: "player",
+		faction: "player",
 		x: playerOpts.x ?? 1,
 		z: playerOpts.z ?? 1,
-		hp: playerOpts.hp ?? 30,
-		maxHp: playerOpts.maxHp ?? playerOpts.hp ?? 30,
-		attack: playerOpts.attack ?? 3,
-		defense: playerOpts.defense ?? 1,
 		speed: playerOpts.speed ?? 5,
 		alive: true,
 		blocksMove: true,
-		faction: "player",
-		tick: 0
+		tick: 0,
+		hp: playerOpts.hp ?? 30,
+		maxHp: playerOpts.maxHp ?? playerOpts.hp ?? 30,
+		attack: playerOpts.attack ?? 3,
+		defense: playerOpts.defense ?? 1
 	};
 	const playerState = {
 		entity: playerEntity,
@@ -2742,19 +2647,20 @@ function createGame(canvas, options) {
 						entity = {
 							id: mn.id,
 							kind: "enemy",
-							type: mn.type,
-							sprite: mn.sprite,
+							spriteName: mn.sprite ?? mn.type,
+							faction: mn.faction,
 							x: mn.x,
 							z: mn.z,
+							speed: mn.speed,
+							alive: mn.alive,
+							blocksMove: mn.blocksMove,
+							tick: mn.tick,
+							type: mn.type,
+							sprite: mn.sprite,
 							hp: mn.hp,
 							maxHp: mn.maxHp,
-							alive: mn.alive,
 							attack: mn.attack,
-							defense: mn.defense,
-							speed: mn.speed,
-							blocksMove: mn.blocksMove,
-							faction: mn.faction,
-							tick: mn.tick
+							defense: mn.defense
 						};
 						if (mn.spriteMap) entity.spriteMap = mn.spriteMap;
 						internal.entityById.set(mn.id, entity);
@@ -2773,10 +2679,11 @@ function createGame(canvas, options) {
 								z: mn.z
 							}
 						});
-						if (mn.hp < old.hp) internal.animationRegistry._enqueue({
+						const oldHp = old.hp;
+						if (mn.hp < oldHp) internal.animationRegistry._enqueue({
 							kind: "damage",
 							entity,
-							amount: old.hp - mn.hp
+							amount: oldHp - mn.hp
 						});
 						if (old.alive && !mn.alive) internal.animationRegistry._enqueue({
 							kind: "death",
@@ -2873,8 +2780,8 @@ function createGame(canvas, options) {
 		get events() {
 			return events;
 		},
-		get combat() {
-			return { factions: internal.factions };
+		get factions() {
+			return internal.factions;
 		},
 		get missions() {
 			return internal.missions;
@@ -2895,7 +2802,8 @@ function createGame(canvas, options) {
 			internal.paintMap.clear();
 			internal.turnCounter = 0;
 			const playerOpts = internal.options.player ?? {};
-			internal.playerState.entity.hp = playerOpts.maxHp ?? playerOpts.hp ?? 30;
+			const maxHp = playerOpts.maxHp ?? playerOpts.hp ?? 30;
+			internal.playerState.entity.hp = maxHp;
 			internal.playerState.entity.alive = true;
 			internal.playerState.facing = 0;
 			generated = false;
@@ -2962,72 +2870,36 @@ var _nextEntityId = 1;
 function nextId(prefix) {
 	return `${prefix}_${_nextEntityId++}`;
 }
-function makeBase(kind, opts, overrides) {
+/**
+* Create a game entity.
+*
+* Supply the engine-level fields via `EntityCoreOpts` plus any game-specific
+* attributes (hp, maxHp, attack, xp, …) as additional keys. All extra keys
+* are spread onto the returned entity verbatim and accessible via the index
+* signature on `EntityBase`.
+*
+* ```ts
+* const orc = createEntity({
+*   kind: "enemy", faction: "enemy", spriteName: "orc_idle", x: 8, z: 2,
+*   hp: 15, maxHp: 15, attack: 5, xp: 25,
+* });
+* ```
+*/
+function createEntity(opts) {
+	const { kind, faction, spriteName, x, z, alive, blocksMove, speed, spriteMap, ...rest } = opts;
 	return {
 		id: nextId(kind),
 		kind,
-		type: opts.type,
-		sprite: opts.sprite,
-		x: opts.x,
-		z: opts.z,
-		hp: 0,
-		maxHp: 0,
-		attack: 0,
-		defense: 0,
-		speed: 0,
-		alive: true,
-		blocksMove: false,
-		faction: opts.faction ?? "none",
+		faction,
+		spriteName,
+		x,
+		z,
+		alive: alive ?? true,
+		blocksMove: blocksMove ?? false,
+		speed: speed ?? 1,
 		tick: 0,
-		...opts.spriteMap !== void 0 ? { spriteMap: opts.spriteMap } : {},
-		...overrides
-	};
-}
-/** Create a friendly or neutral NPC entity. */
-function createNpc(opts) {
-	const maxHp = opts.maxHp ?? 10;
-	return makeBase("npc", opts, {
-		id: nextId("npc"),
-		hp: opts.hp ?? maxHp,
-		maxHp,
-		attack: opts.attack ?? 0,
-		defense: opts.defense ?? 0,
-		speed: opts.speed ?? 5,
-		blocksMove: opts.blocksMove ?? true
-	});
-}
-/** Create an enemy entity. */
-function createEnemy(opts) {
-	const maxHp = opts.maxHp ?? 10;
-	return {
-		...makeBase("enemy", opts, {
-			id: nextId("enemy"),
-			hp: opts.hp ?? maxHp,
-			maxHp,
-			attack: opts.attack ?? 3,
-			defense: opts.defense ?? 0,
-			speed: opts.speed ?? 7,
-			blocksMove: opts.blocksMove ?? true
-		}),
-		danger: opts.danger ?? 1,
-		xp: opts.xp ?? 10,
-		rpsEffect: opts.rpsEffect ?? "none",
-		alertState: "idle",
-		searchTurnsLeft: 0,
-		lastKnownPlayerPos: null
-	};
-}
-/** Create a stationary decoration entity. Decorations are not alive in the turn sense. */
-function createDecoration(opts) {
-	return {
-		...makeBase("decoration", opts, {
-			id: nextId("decoration"),
-			alive: false,
-			blocksMove: opts.blocksMove ?? false,
-			speed: 0
-		}),
-		yaw: opts.yaw ?? 0,
-		scale: opts.scale ?? 1
+		...spriteMap !== void 0 ? { spriteMap } : {},
+		...rest
 	};
 }
 //#endregion
@@ -4762,7 +4634,8 @@ function createDungeonRenderer(element, game, options = {}) {
 	const entityGeoCache = /* @__PURE__ */ new Map();
 	const entityMatCache = /* @__PURE__ */ new Map();
 	function resolveAppearanceKey(e) {
-		if (appearances[e.type]) return e.type;
+		const type = e.type;
+		if (type && appearances[type]) return type;
 		if (appearances[e.kind]) return e.kind;
 		return "__default__";
 	}
@@ -4800,20 +4673,16 @@ function createDungeonRenderer(element, game, options = {}) {
 				const fakeEntity = {
 					id: key,
 					kind: "decoration",
-					type: obj.type,
-					sprite: obj.type,
+					spriteName: obj.type,
+					faction: "none",
 					x: obj.x,
 					z: obj.z,
-					hp: 0,
-					maxHp: 0,
-					attack: 0,
-					defense: 0,
 					speed: 0,
 					alive: true,
 					blocksMove: false,
-					faction: "none",
 					tick: 0,
-					spriteMap: obj.spriteMap
+					spriteMap: obj.spriteMap,
+					type: obj.type
 				};
 				objectBillboardMap.set(key, createBillboard(fakeEntity, packedAtlas, scene, resolver));
 			}
@@ -6192,6 +6061,6 @@ function dungeonMapFromJson(json) {
 	return importDungeonMap(JSON.parse(json));
 }
 //#endregion
-export { IS_BLOCKED, IS_LIGHT_PASSABLE, IS_WALKABLE, THEMES, THEME_KEYS, attachDecorator, attachKeybindings, attachMinimap, attachSpawner, attachSurfacePainter, buildColliderFlags, colliderFlagsFromSolid, createDecoration, createDungeonRenderer, createEnemy, createGame, createItem, createNpc, createWebSocketTransport, dungeonMapFromJson, dungeonMapToJson, exportDungeonMap, getTheme, importDungeonMap, isBlockedCell, isLightPassableCell, isWalkableCell, loadMultiAtlas, loadSkybox, loadTextureAtlas, loadTiledMap, packedAtlasResolver, registerTheme, resolveSprite, resolveTheme, setCeilSkirtTiles, setFloorSkirtTiles, showInventory, spriteToUvRect, toFaceRotation };
+export { IS_BLOCKED, IS_LIGHT_PASSABLE, IS_WALKABLE, THEMES, THEME_KEYS, attachDecorator, attachKeybindings, attachMinimap, attachSpawner, attachSurfacePainter, buildColliderFlags, colliderFlagsFromSolid, createDungeonRenderer, createEntity, createFactionRegistry, createFactionRegistryFromTable, createGame, createItem, createWebSocketTransport, dungeonMapFromJson, dungeonMapToJson, exportDungeonMap, getTheme, importDungeonMap, isBlockedCell, isLightPassableCell, isWalkableCell, loadMultiAtlas, loadSkybox, loadTextureAtlas, loadTiledMap, packedAtlasResolver, registerTheme, resolveSprite, resolveTheme, setCeilSkirtTiles, setFloorSkirtTiles, showInventory, spriteToUvRect, toFaceRotation };
 
 //# sourceMappingURL=atomic-core.js.map

@@ -1,6 +1,6 @@
 // src/lib/index.ts
 //
-// Public surface of r3f-crawl-lib. Re-exports the full CrawlLib API.
+// Public surface of atomic-core. Re-exports the full AtomicCore API.
 
 export {
   createGame,
@@ -12,7 +12,8 @@ export {
 } from './api/createGame'
 export type { SurfacePaintTarget, PlaceAPI } from './api/createGame'
 
-export { createNpc, createEnemy, createDecoration } from './entities/factory'
+export { createEntity }                              from './entities/factory'
+export type { EntityCoreOpts }                       from './entities/factory'
 export { createItem }                                from './entities/inventory'
 export { loadTiledMap }                              from './dungeon/tiled'
 
@@ -43,6 +44,11 @@ export type { InventoryOptions, InventoryHandle, InventoryHandleCore, EquipSlotD
 // Animation system
 export type { AnimationEventKind, AnimationEventMap, AnimationQueueEntry, AnimationHandler, AnimationsHandle } from './animations/types'
 
+// Combat system
+export type { CombatResolver, CombatResolverContext, CombatResult } from './combat/combat'
+export { createFactionRegistry, createFactionRegistryFromTable }     from './combat/factions'
+export type { FactionRegistry, FactionStance, FactionId }            from './combat/factions'
+
 // Type exports
 export type { GameEventMap, EventEmitter }           from './events/eventEmitter'
 export type { DungeonOutputs, BspDungeonOutputs }    from './dungeon/bsp'
@@ -53,6 +59,5 @@ export type { DungeonMapFile, DungeonMapMeta, SerializedRendererOptions, ExportO
 export { setFloorSkirtTiles, setCeilSkirtTiles }     from './dungeon/bsp'
 export { IS_WALKABLE, IS_BLOCKED, IS_LIGHT_PASSABLE, buildColliderFlags, colliderFlagsFromSolid, isWalkableCell, isBlockedCell, isLightPassableCell } from './dungeon/colliderFlags'
 export type { EntityBase, HiddenPassage, ObjectPlacement } from './entities/types'
-export type { DecorationEntity }                     from './entities/factory'
 export type { Item, InventorySlot }                  from './entities/inventory'
 export type { TurnAction, TurnActionKind }           from './turn/types'
