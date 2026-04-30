@@ -22,7 +22,10 @@ export type { CombatResolver, CombatResolverContext, CombatResult } from './comb
 export { createFactionRegistry, createFactionRegistryFromTable } from './combat/factions';
 export type { FactionRegistry, FactionStance, FactionId } from './combat/factions';
 export type { GameEventMap, EventEmitter } from './events/eventEmitter';
-export type { DungeonOutputs, BspDungeonOutputs } from './dungeon/bsp';
+export type { DungeonOutputs, BspDungeonOutputs, RoomedDungeonOutputs } from './dungeon/bsp';
+export { generateCellularDungeon } from './dungeon/cellular';
+export type { CellularOptions, CellularDungeonOutputs } from './dungeon/cellular';
+export type { SpawnChooserContext } from './api/createGame';
 export { exportDungeonMap, dungeonMapToJson, importDungeonMap, dungeonMapFromJson } from './dungeon/mapFile';
 export type { DungeonMapFile, DungeonMapMeta, SerializedRendererOptions, ExportOptions, ImportResult } from './dungeon/mapFile';
 export { setFloorSkirtTiles, setCeilSkirtTiles } from './dungeon/bsp';

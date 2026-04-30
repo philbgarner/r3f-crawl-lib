@@ -127,13 +127,17 @@ export type BspDungeonOptions = {
     corridorStyle?: "straight-or-z";
     keepOuterWalls?: boolean;
 };
-export type BspDungeonOutputs = DungeonOutputs & {
-    /** Room ID (matches regionId texture values) chosen as the dungeon exit. Has exactly 1 corridor connection. */
+/**
+ * Shared output fields for any dungeon type that has a room graph.
+ * Both BSP and cellular dungeons produce this structure.
+ */
+export type RoomedDungeonOutputs = DungeonOutputs & {
+    /** Room ID (matches regionId texture values) chosen as the dungeon exit. */
     endRoomId: number;
-    /** Room ID furthest from endRoomId - used as the player spawn room. */
+    /** Room ID furthest from endRoomId — used as the default player spawn room. */
     startRoomId: number;
     /**
-     * Map from regionId → RoomInfo for every carved room AND every corridor segment.
+     * Map from regionId → RoomInfo for every room (and corridor segment for BSP).
      * Room entries have `type: "room"` and IDs matching textures.regionId values (1+).
      * Corridor entries have `type: "corridor"` and IDs starting at `firstCorridorRegionId`.
      * startRoomId and endRoomId are guaranteed keys.
@@ -146,9 +150,11 @@ export type BspDungeonOutputs = DungeonOutputs & {
      * Identical in content to `textures.regionId`.
      */
     fullRegionIds: Uint8Array;
-    /** Lowest regionId assigned to a corridor segment. */
+    /** Lowest regionId assigned to a corridor segment. For cellular dungeons, equals numRooms + 1 (no corridor entries). */
     firstCorridorRegionId: number;
 };
+/** BSP-generated dungeon outputs. Identical shape to RoomedDungeonOutputs. */
+export type BspDungeonOutputs = RoomedDungeonOutputs;
 /**
  * Builds a combined region-id array where corridor floor cells (regionId === 0
  * in the original texture) are flood-filled into unique IDs.

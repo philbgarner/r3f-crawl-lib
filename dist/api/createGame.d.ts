@@ -1,4 +1,5 @@
 import { BspDungeonOptions, DungeonOutputs } from '../dungeon/bsp';
+import { CellularOptions } from '../dungeon/cellular';
 import { TiledMapOptions } from '../dungeon/tiled';
 import { TurnAction } from '../turn/types';
 import { EventEmitter } from '../events/eventEmitter';
@@ -96,16 +97,32 @@ export type PlaceAPI = {
     decoration(x: number, z: number, type: string, opts?: Record<string, unknown>): void;
     surface(x: number, z: number, layers: SurfacePaintTarget): void;
 };
+export type SpawnChooserContext = {
+    rooms: PublicRoom[];
+    startRoom: PublicRoom;
+    endRoom: PublicRoom;
+};
 export type DungeonOptions = (BspDungeonOptions & {
+    cellular?: never;
     tiled?: never;
     onPlace?: (ctx: OnPlaceContext) => void;
+    /** Return a roomId to override the default spawn room (furthest from exit). */
+    onChooseSpawn?: (ctx: SpawnChooserContext) => number;
+}) | (CellularOptions & {
+    cellular: true;
+    tiled?: never;
+    onPlace?: (ctx: OnPlaceContext) => void;
+    /** Return a roomId to override the default spawn room. */
+    onChooseSpawn?: (ctx: SpawnChooserContext) => number;
 }) | {
     tiled: {
         map: unknown;
     } & Omit<TiledMapOptions, "layers"> & {
         layers?: TiledMapOptions["layers"];
     };
+    cellular?: never;
     onPlace?: (ctx: OnPlaceContext) => void;
+    onChooseSpawn?: never;
 };
 export type CombatOptions = {
     /**

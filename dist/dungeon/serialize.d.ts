@@ -1,4 +1,4 @@
-import { BspDungeonOptions, BspDungeonOutputs } from './bsp';
+import { BspDungeonOptions, BspDungeonOutputs, RoomedDungeonOutputs } from './bsp';
 /**
  * Plain, JSON-safe snapshot of a dungeon's mutable texture data.
  * Immutable generation inputs are stored so the dungeon can be fully
@@ -56,7 +56,7 @@ export type SerializedDungeon = {
  * Pass paintMap (from game.dungeon.paintMap) to include surface-painter overlays.
  * Height offset textures are read directly from the dungeon when present.
  */
-export declare function serializeDungeon(dungeon: BspDungeonOutputs, paintMap?: ReadonlyMap<string, {
+export declare function serializeDungeon(dungeon: RoomedDungeonOutputs, paintMap?: ReadonlyMap<string, {
     floor?: string[];
     wall?: string[];
     ceil?: string[];
@@ -76,7 +76,7 @@ export declare function rehydrateDungeon(data: SerializedDungeon, originalOption
 /**
  * Convenience: serialize a dungeon to a JSON string.
  */
-export declare function dungeonToJson(dungeon: BspDungeonOutputs): string;
+export declare function dungeonToJson(dungeon: RoomedDungeonOutputs): string;
 /**
  * Convenience: deserialize a dungeon from a JSON string.
  * The `rooms` map will be empty; use rehydrateDungeon() for full restoration.

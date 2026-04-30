@@ -1,10 +1,6 @@
-import { DungeonOutputs } from './bsp';
+import { DungeonOutputs, RoomedDungeonOutputs } from './bsp';
 import * as THREE from "three";
-export type { DungeonOutputs };
-export type GridPos = {
-    x: number;
-    y: number;
-};
+export type { DungeonOutputs, RoomedDungeonOutputs };
 export type CellularOptions = {
     width: number;
     height: number;
@@ -24,14 +20,14 @@ export type CellularOptions = {
     survivalThreshold?: number;
     keepOuterWalls?: boolean;
 };
-export type CellularDungeonOutputs = DungeonOutputs & {
-    /**
-     * The largest connected floor region, chosen as the playable area.
-     * Cells outside it are re-solidified so the output is always fully connected.
-     */
+export type CellularDungeonOutputs = RoomedDungeonOutputs & {
     textures: {
         solid: THREE.DataTexture;
-        /** Region flood-fill ID per cell - 0 = wall, 1 = the single remaining region. */
+        /**
+         * Voronoi region ID per cell — 0 = wall, 1..N = room IDs assigned by the
+         * local-maxima Voronoi decomposition of the distanceToWall field.
+         * Matches startRoomId / endRoomId and the keys in `rooms`.
+         */
         regionId: THREE.DataTexture;
         distanceToWall: THREE.DataTexture;
         hazards: THREE.DataTexture;
@@ -47,8 +43,6 @@ export type CellularDungeonOutputs = DungeonOutputs & {
         floorSkirtType: THREE.DataTexture;
         ceilSkirtType: THREE.DataTexture;
     };
-    /** Floor cell closest to the centroid of the largest region - good spawn point. */
-    startPos: GridPos;
 };
 /**
  * Generate a cellular-automata cave dungeon.

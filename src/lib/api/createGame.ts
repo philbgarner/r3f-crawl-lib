@@ -10,7 +10,9 @@
 // See README §Script Tag Developer Guide for full option shapes.
 
 import { generateBspDungeon } from "../dungeon/bsp";
-import type { BspDungeonOptions, BspDungeonOutputs, DungeonOutputs, RoomInfo } from "../dungeon/bsp";
+import type { BspDungeonOptions, BspDungeonOutputs, RoomedDungeonOutputs, DungeonOutputs, RoomInfo } from "../dungeon/bsp";
+import { generateCellularDungeon } from "../dungeon/cellular";
+import type { CellularOptions, CellularDungeonOutputs } from "../dungeon/cellular";
 import { loadTiledMap } from "../dungeon/tiled";
 import type { TiledMapOptions, TiledMapOutputs } from "../dungeon/tiled";
 import { createTurnSystemState, commitPlayerAction, tickUntilPlayer } from "../turn/system";
@@ -169,16 +171,34 @@ export type PlaceAPI = {
   surface(x: number, z: number, layers: SurfacePaintTarget): void;
 };
 
+export type SpawnChooserContext = {
+  rooms: PublicRoom[];
+  startRoom: PublicRoom;
+  endRoom: PublicRoom;
+};
+
 export type DungeonOptions =
   | (BspDungeonOptions & {
+      cellular?: never;
       tiled?: never;
       onPlace?: (ctx: OnPlaceContext) => void;
+      /** Return a roomId to override the default spawn room (furthest from exit). */
+      onChooseSpawn?: (ctx: SpawnChooserContext) => number;
+    })
+  | (CellularOptions & {
+      cellular: true;
+      tiled?: never;
+      onPlace?: (ctx: OnPlaceContext) => void;
+      /** Return a roomId to override the default spawn room. */
+      onChooseSpawn?: (ctx: SpawnChooserContext) => number;
     })
   | {
       tiled: { map: unknown } & Omit<TiledMapOptions, "layers"> & {
         layers?: TiledMapOptions["layers"];
       };
+      cellular?: never;
       onPlace?: (ctx: OnPlaceContext) => void;
+      onChooseSpawn?: never;
     };
 
 export type CombatOptions = {
@@ -313,7 +333,7 @@ type GameInternal = {
   factions: FactionRegistry;
 
   // Set during generate()
-  dungeonOutputs: BspDungeonOutputs | TiledMapOutputs | null;
+  dungeonOutputs: RoomedDungeonOutputs | TiledMapOutputs | null;
   solidData: Uint8Array | null;
   colliderFlagsData: Uint8Array | null;
   turnState: TurnSystemState | null;
@@ -647,7 +667,7 @@ function makeDungeonHandle(internal: GameInternal): DungeonHandle {
     get rooms() {
       if (!_roomsCache && internal.dungeonOutputs && "rooms" in internal.dungeonOutputs) {
         _roomsCache = {};
-        for (const [id, info] of (internal.dungeonOutputs as BspDungeonOutputs).rooms) {
+        for (const [id, info] of (internal.dungeonOutputs as RoomedDungeonOutputs).rooms) {
           _roomsCache[id] = toPublicRoom(id, info);
         }
       }
@@ -828,7 +848,7 @@ function runGenerate(
   const dungeonOpts = internal.options.dungeon;
 
   // 1. Build dungeon
-  let dungeonOut: BspDungeonOutputs | TiledMapOutputs;
+  let dungeonOut: RoomedDungeonOutputs | TiledMapOutputs;
   if ("tiled" in dungeonOpts && dungeonOpts.tiled) {
     const tiledCfg = dungeonOpts.tiled;
     dungeonOut = loadTiledMap(tiledCfg.map, {
@@ -838,9 +858,10 @@ function runGenerate(
       ...(tiledCfg.objectLayer !== undefined ? { objectLayer: tiledCfg.objectLayer } : {}),
       ...(tiledCfg.seed !== undefined ? { seed: tiledCfg.seed } : {}),
     });
+  } else if ("cellular" in dungeonOpts && dungeonOpts.cellular) {
+    dungeonOut = generateCellularDungeon(dungeonOpts as CellularOptions);
   } else {
-    const bspOpts = dungeonOpts as BspDungeonOptions;
-    dungeonOut = generateBspDungeon(bspOpts);
+    dungeonOut = generateBspDungeon(dungeonOpts as BspDungeonOptions);
   }
 
   internal.dungeonOutputs = dungeonOut;
@@ -849,17 +870,30 @@ function runGenerate(
   internal.solidData = rawSolid;
   internal.colliderFlagsData = dungeonOut.textures.colliderFlags.image.data as Uint8Array;
 
-  // 2. Place player at start room centre if BSP
+  // 2. Place player at the spawn room centre (default: startRoomId, overridable via onChooseSpawn)
   const playerOpts = internal.options.player ?? {};
   let playerX = playerOpts.x ?? 1;
   let playerZ = playerOpts.z ?? 1;
 
-  if ("startRoomId" in dungeonOut && dungeonOut.rooms) {
-    const bspOut = dungeonOut as BspDungeonOutputs;
-    const startRoom = bspOut.rooms.get(bspOut.startRoomId);
-    if (startRoom && playerOpts.x == null) {
-      playerX = Math.floor(startRoom.rect.x + startRoom.rect.w / 2);
-      playerZ = Math.floor(startRoom.rect.y + startRoom.rect.h / 2);
+  if ("startRoomId" in dungeonOut && dungeonOut.rooms && playerOpts.x == null) {
+    const rOut = dungeonOut as RoomedDungeonOutputs;
+    let spawnRoomId = rOut.startRoomId;
+
+    const onChooseSpawn = (dungeonOpts as { onChooseSpawn?: (ctx: SpawnChooserContext) => number }).onChooseSpawn;
+    if (onChooseSpawn) {
+      const roomList: PublicRoom[] = [];
+      for (const [id, info] of rOut.rooms) {
+        if (info.type === "room") roomList.push(toPublicRoom(id, info));
+      }
+      const startRoom = toPublicRoom(rOut.startRoomId, rOut.rooms.get(rOut.startRoomId)!);
+      const endRoom   = toPublicRoom(rOut.endRoomId,   rOut.rooms.get(rOut.endRoomId)!);
+      spawnRoomId = onChooseSpawn({ rooms: roomList, startRoom, endRoom });
+    }
+
+    const spawnRoom = rOut.rooms.get(spawnRoomId);
+    if (spawnRoom) {
+      playerX = Math.floor(spawnRoom.rect.x + spawnRoom.rect.w / 2);
+      playerZ = Math.floor(spawnRoom.rect.y + spawnRoom.rect.h / 2);
     }
   }
 
@@ -877,9 +911,9 @@ function runGenerate(
     internal.passageMask = new Uint8Array(dungeonOut.width * dungeonOut.height);
   }
 
-  // 4. Minimap state (BSP only)
+  // 4. Minimap state (roomed dungeons only)
   if ("startRoomId" in dungeonOut) {
-    internal.minimapState = createMinimapState(dungeonOut as BspDungeonOutputs);
+    internal.minimapState = createMinimapState(dungeonOut as RoomedDungeonOutputs);
   }
 
   // 5. Build player actor and init turn system
@@ -900,22 +934,22 @@ function runGenerate(
 
   internal.turnState = createTurnSystemState(playerActor, preActors);
 
-  // 6. Run onPlace callback (BSP only)
+  // 6. Run onPlace callback (roomed dungeons)
   if ("startRoomId" in dungeonOut && dungeonOpts.onPlace) {
-    const bspOut = dungeonOut as BspDungeonOutputs;
-    const rngFn = makeRng(typeof bspOut.seed === "number" ? bspOut.seed : 0x12345678);
+    const rOut = dungeonOut as RoomedDungeonOutputs;
+    const rngFn = makeRng(typeof rOut.seed === "number" ? rOut.seed : 0x12345678);
     const rng = {
       next: rngFn,
       chance: (p: number) => rngFn() < p,
     };
 
     const roomList: PublicRoom[] = [];
-    for (const [id, info] of bspOut.rooms) {
+    for (const [id, info] of rOut.rooms) {
       if (info.type === "room") roomList.push(toPublicRoom(id, info));
     }
 
-    const endRoom = toPublicRoom(bspOut.endRoomId, bspOut.rooms.get(bspOut.endRoomId)!);
-    const startRoom = toPublicRoom(bspOut.startRoomId, bspOut.rooms.get(bspOut.startRoomId)!);
+    const endRoom   = toPublicRoom(rOut.endRoomId,   rOut.rooms.get(rOut.endRoomId)!);
+    const startRoom = toPublicRoom(rOut.startRoomId, rOut.rooms.get(rOut.startRoomId)!);
 
     const place: PlaceAPI = {
       object(x, z, type, meta) {
@@ -992,13 +1026,13 @@ function runGenerate(
       },
     };
 
-    dungeonOpts.onPlace({ rooms: roomList, endRoom, startRoom, rng, place });
+    (dungeonOpts as { onPlace?: (ctx: OnPlaceContext) => void }).onPlace!({ rooms: roomList, endRoom, startRoom, rng, place });
   }
 
   // 7. Run spawner callback per room
   if (internal.spawnerCb && "startRoomId" in dungeonOut) {
-    const bspOut = dungeonOut as BspDungeonOutputs;
-    for (const [id, info] of bspOut.rooms) {
+    const rOut = dungeonOut as RoomedDungeonOutputs;
+    for (const [id, info] of rOut.rooms) {
       if (info.type !== "room") continue;
       const result = internal.spawnerCb({
         dungeon: dungeonHandle,

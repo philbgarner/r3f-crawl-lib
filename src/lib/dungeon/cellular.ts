@@ -4,16 +4,14 @@
 // so it works directly with generateContent, aStar8, computeFov, etc.
 
 import * as THREE from "three";
-import type { DungeonOutputs } from "./bsp";
+import type { DungeonOutputs, RoomedDungeonOutputs, RoomInfo } from "./bsp";
 import { buildColliderFlags } from "./colliderFlags";
 
-export type { DungeonOutputs };
+export type { DungeonOutputs, RoomedDungeonOutputs };
 
 // --------------------------------
 // Types
 // --------------------------------
-
-export type GridPos = { x: number; y: number };
 
 export type CellularOptions = {
   width: number;
@@ -37,14 +35,14 @@ export type CellularOptions = {
   keepOuterWalls?: boolean;
 };
 
-export type CellularDungeonOutputs = DungeonOutputs & {
-  /**
-   * The largest connected floor region, chosen as the playable area.
-   * Cells outside it are re-solidified so the output is always fully connected.
-   */
+export type CellularDungeonOutputs = RoomedDungeonOutputs & {
   textures: {
     solid: THREE.DataTexture;
-    /** Region flood-fill ID per cell - 0 = wall, 1 = the single remaining region. */
+    /**
+     * Voronoi region ID per cell — 0 = wall, 1..N = room IDs assigned by the
+     * local-maxima Voronoi decomposition of the distanceToWall field.
+     * Matches startRoomId / endRoomId and the keys in `rooms`.
+     */
     regionId: THREE.DataTexture;
     distanceToWall: THREE.DataTexture;
     hazards: THREE.DataTexture;
@@ -60,8 +58,6 @@ export type CellularDungeonOutputs = DungeonOutputs & {
     floorSkirtType: THREE.DataTexture;
     ceilSkirtType: THREE.DataTexture;
   };
-  /** Floor cell closest to the centroid of the largest region - good spawn point. */
-  startPos: GridPos;
 };
 
 // --------------------------------
@@ -218,6 +214,169 @@ function maskToDataTextureRGBA(mask: Uint8Array, W: number, H: number, name: str
 }
 
 // --------------------------------
+// Room graph helpers
+// --------------------------------
+
+/**
+ * Assign Voronoi room IDs by doing a multi-source BFS from the local maxima of
+ * the distanceToWall field. Each local maximum seeds one "room"; every reachable
+ * floor cell is claimed by the nearest seed. The regionId array (1..N, 0 = wall)
+ * is written in-place and the full room graph is returned.
+ */
+function buildVoronoiRooms(
+  solid: Uint8Array,
+  dtw: Uint8Array,
+  W: number,
+  H: number,
+): {
+  regionIdArr: Uint8Array;
+  rooms: Map<number, RoomInfo>;
+  firstCorridorRegionId: number;
+  startRoomId: number;
+  endRoomId: number;
+} {
+  const MIN_SEED_DIST = 2;
+  const DX = [1, -1, 0, 0];
+  const DY = [0, 0, 1, -1];
+
+  // Collect strict 4-connected local maxima above the threshold
+  const seeds: number[] = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = idx(x, y, W);
+      if (solid[i] !== 0) continue;
+      const d = dtw[i]!;
+      if (d < MIN_SEED_DIST) continue;
+      if (
+        d > (x > 0     ? dtw[idx(x - 1, y, W)]! : 0) &&
+        d > (x < W - 1 ? dtw[idx(x + 1, y, W)]! : 0) &&
+        d > (y > 0     ? dtw[idx(x, y - 1, W)]! : 0) &&
+        d > (y < H - 1 ? dtw[idx(x, y + 1, W)]! : 0)
+      ) {
+        seeds.push(i);
+      }
+    }
+  }
+
+  // Fallback: use the single cell with the highest distanceToWall
+  if (seeds.length === 0) {
+    let bestIdx = -1, bestDist = -1;
+    for (let i = 0; i < W * H; i++) {
+      if (solid[i] === 0 && dtw[i]! > bestDist) { bestDist = dtw[i]!; bestIdx = i; }
+    }
+    if (bestIdx >= 0) seeds.push(bestIdx);
+  }
+
+  // regionId is R8 — cap at 254 rooms (0 = wall, 1..254 = rooms)
+  if (seeds.length > 254) seeds.length = 254;
+
+  const N = seeds.length;
+
+  // Multi-source BFS (Voronoi expansion)
+  const regionIdArr = new Uint8Array(W * H);
+  const queue = new Int32Array(W * H);
+  let qh = 0, qt = 0;
+  for (let s = 0; s < N; s++) {
+    const si = seeds[s]!;
+    regionIdArr[si] = s + 1;
+    queue[qt++] = si;
+  }
+  while (qh < qt) {
+    const i = queue[qh++]!;
+    const x = i % W, y = (i / W) | 0;
+    const rid = regionIdArr[i]!;
+    for (let d = 0; d < 4; d++) {
+      const nx = x + DX[d]!, ny = y + DY[d]!;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const ni = idx(nx, ny, W);
+      if (solid[ni] !== 0 || regionIdArr[ni] !== 0) continue;
+      regionIdArr[ni] = rid;
+      queue[qt++] = ni;
+    }
+  }
+
+  // Compute bounding rects and adjacency in one pass
+  const minX = new Int32Array(N + 1).fill(W);
+  const minY = new Int32Array(N + 1).fill(H);
+  const maxX = new Int32Array(N + 1).fill(-1);
+  const maxY = new Int32Array(N + 1).fill(-1);
+  const adj = new Map<number, Set<number>>();
+  for (let i = 1; i <= N; i++) adj.set(i, new Set());
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = idx(x, y, W);
+      const rid = regionIdArr[i] ?? 0;
+      if (rid === 0) continue;
+      if (x < (minX[rid] ?? W))  minX[rid] = x;
+      if (x > (maxX[rid] ?? -1)) maxX[rid] = x;
+      if (y < (minY[rid] ?? H))  minY[rid] = y;
+      if (y > (maxY[rid] ?? -1)) maxY[rid] = y;
+      if (x + 1 < W) {
+        const nr = regionIdArr[idx(x + 1, y, W)] ?? 0;
+        if (nr !== 0 && nr !== rid) { adj.get(rid)!.add(nr); adj.get(nr)!.add(rid); }
+      }
+      if (y + 1 < H) {
+        const nr = regionIdArr[idx(x, y + 1, W)] ?? 0;
+        if (nr !== 0 && nr !== rid) { adj.get(rid)!.add(nr); adj.get(nr)!.add(rid); }
+      }
+    }
+  }
+
+  const rooms = new Map<number, RoomInfo>();
+  for (let i = 1; i <= N; i++) {
+    const rx = minX[i] ?? 0, ry = minY[i] ?? 0;
+    const rw = (maxX[i] ?? rx) - rx + 1, rh = (maxY[i] ?? ry) - ry + 1;
+    rooms.set(i, {
+      id: i,
+      type: "room",
+      rect: { x: rx, y: ry, w: rw, h: rh },
+      connections: [...(adj.get(i) ?? [])],
+    });
+  }
+
+  const { startRoomId, endRoomId } = pickStartEndRooms(adj);
+  return { regionIdArr, rooms, firstCorridorRegionId: N + 1, startRoomId, endRoomId };
+}
+
+function pickStartEndRooms(adjacency: Map<number, Set<number>>): { startRoomId: number; endRoomId: number } {
+  const allRooms = Array.from(adjacency.keys());
+  if (allRooms.length === 0) return { startRoomId: 1, endRoomId: 1 };
+  if (allRooms.length === 1) return { startRoomId: allRooms[0]!, endRoomId: allRooms[0]! };
+
+  const deadEnds = allRooms.filter(id => (adjacency.get(id)?.size ?? 0) === 1);
+  const candidates = deadEnds.length > 0 ? deadEnds : allRooms;
+
+  function bfsFurthest(startId: number): { id: number; dist: number } {
+    const dist = new Map<number, number>();
+    dist.set(startId, 0);
+    const q = [startId];
+    let head = 0, furthestId = startId, furthestDist = 0;
+    while (head < q.length) {
+      const cur = q[head++]!;
+      const d = dist.get(cur)!;
+      for (const nb of adjacency.get(cur) ?? []) {
+        if (!dist.has(nb)) {
+          dist.set(nb, d + 1);
+          q.push(nb);
+          if (d + 1 > furthestDist) { furthestDist = d + 1; furthestId = nb; }
+        }
+      }
+    }
+    return { id: furthestId, dist: furthestDist };
+  }
+
+  let endRoomId = candidates[0]!;
+  let bestDist = -1;
+  for (const cand of candidates) {
+    const { dist: d } = bfsFurthest(cand);
+    if (d > bestDist) { bestDist = d; endRoomId = cand; }
+  }
+  const { id: startRoomId } = bfsFurthest(endRoomId);
+  return { startRoomId, endRoomId };
+}
+
+// --------------------------------
 // Public generator
 // --------------------------------
 
@@ -291,38 +450,11 @@ export function generateCellularDungeon(options: CellularOptions): CellularDunge
     solid[i] = 0;
   }
 
-  // Step 5: build regionId - 1 for all cells in the surviving region, 0 for walls
-  const regionId = new Uint8Array(W * H);
-  for (const i of largestRegion) {
-    regionId[i] = 1;
-  }
-
-  // Step 6: find startPos - floor cell closest to the centroid of the largest region
-  let cx = 0;
-  let cy = 0;
-  for (const i of largestRegion) {
-    cx += i % W;
-    cy += (i / W) | 0;
-  }
-  cx = Math.round(cx / largestRegion.length);
-  cy = Math.round(cy / largestRegion.length);
-
-  let startPos: GridPos = { x: cx, y: cy };
-  if (solid[idx(cx, cy, W)] !== 0) {
-    let bestDist = Infinity;
-    for (const i of largestRegion) {
-      const fx = i % W;
-      const fy = (i / W) | 0;
-      const d = (fx - cx) * (fx - cx) + (fy - cy) * (fy - cy);
-      if (d < bestDist) {
-        bestDist = d;
-        startPos = { x: fx, y: fy };
-      }
-    }
-  }
-
-  // Step 7: compute distanceToWall and ancillary masks
+  // Step 5: compute distanceToWall, then derive Voronoi room IDs from its local maxima
   const distanceToWall = computeDistanceToWall(solid, W, H);
+  const { regionIdArr, rooms, firstCorridorRegionId, startRoomId, endRoomId } =
+    buildVoronoiRooms(solid, distanceToWall, W, H);
+
   const hazards = new Uint8Array(W * H);
   const colliderFlagsArr = buildColliderFlags(solid);
   const temperature = new Uint8Array(W * H);
@@ -346,10 +478,14 @@ export function generateCellularDungeon(options: CellularOptions): CellularDunge
     width: W,
     height: H,
     seed: seedU32,
-    startPos,
+    startRoomId,
+    endRoomId,
+    rooms,
+    fullRegionIds: regionIdArr,
+    firstCorridorRegionId,
     textures: {
       solid:           maskToDataTextureR8(solid,           W, H, "cellular_solid"),
-      regionId:        maskToDataTextureR8(regionId,        W, H, "cellular_region_id"),
+      regionId:        maskToDataTextureR8(regionIdArr,     W, H, "cellular_region_id"),
       distanceToWall:  maskToDataTextureR8(distanceToWall,  W, H, "cellular_distance_to_wall"),
       hazards:         maskToDataTextureR8(hazards,         W, H, "cellular_hazards"),
       temperature:     maskToDataTextureR8(temperature,     W, H, "cellular_temperature"),

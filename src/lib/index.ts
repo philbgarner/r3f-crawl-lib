@@ -51,7 +51,10 @@ export type { FactionRegistry, FactionStance, FactionId }            from './com
 
 // Type exports
 export type { GameEventMap, EventEmitter }           from './events/eventEmitter'
-export type { DungeonOutputs, BspDungeonOutputs }    from './dungeon/bsp'
+export type { DungeonOutputs, BspDungeonOutputs, RoomedDungeonOutputs } from './dungeon/bsp'
+export { generateCellularDungeon }                   from './dungeon/cellular'
+export type { CellularOptions, CellularDungeonOutputs } from './dungeon/cellular'
+export type { SpawnChooserContext }                  from './api/createGame'
 
 // Map file import/export
 export { exportDungeonMap, dungeonMapToJson, importDungeonMap, dungeonMapFromJson } from './dungeon/mapFile'

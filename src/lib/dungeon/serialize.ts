@@ -2,7 +2,7 @@
 // Textures hold all mutable state; generation inputs are stored for
 // full rehydration (including the room graph) without re-running from scratch.
 
-import type { BspDungeonOptions, BspDungeonOutputs, RoomInfo } from "./bsp";
+import type { BspDungeonOptions, BspDungeonOutputs, RoomedDungeonOutputs, RoomInfo } from "./bsp";
 import { generateBspDungeon } from "./bsp";
 import { buildColliderFlags } from "./colliderFlags";
 import * as THREE from "three";
@@ -122,7 +122,7 @@ function makeDataTextureRGBA(data: Uint8Array, W: number, H: number, name: strin
  * Height offset textures are read directly from the dungeon when present.
  */
 export function serializeDungeon(
-  dungeon: BspDungeonOutputs,
+  dungeon: RoomedDungeonOutputs,
   paintMap?: ReadonlyMap<string, { floor?: string[]; wall?: string[]; ceil?: string[] }>,
 ): SerializedDungeon {
   const out: SerializedDungeon = {
@@ -288,7 +288,7 @@ export function rehydrateDungeon(
 /**
  * Convenience: serialize a dungeon to a JSON string.
  */
-export function dungeonToJson(dungeon: BspDungeonOutputs): string {
+export function dungeonToJson(dungeon: RoomedDungeonOutputs): string {
   return JSON.stringify(serializeDungeon(dungeon));
 }
 

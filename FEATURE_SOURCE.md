@@ -145,13 +145,20 @@ Open-sky cells omit their ceiling face and instead render a thin rim (one `offse
 
 ---
 
-### BSP dungeon generator
+### BSP and cellular dungeon generators
+
+Both generators produce a `RoomedDungeonOutputs` (extends `DungeonOutputs`) with a full room graph: `startRoomId`, `endRoomId`, `rooms: Map<number, RoomInfo>`, `fullRegionIds`, and `firstCorridorRegionId`. The `regionId` texture stores per-cell room IDs that match the `rooms` map keys.
+
+- **BSP**: rooms are explicitly carved rectangles; corridors are separate graph entries (`type: "corridor"`). Start/end chosen by BFS on the room adjacency graph (furthest dead-end pair).
+- **Cellular**: Voronoi rooms are derived from local maxima of the `distanceToWall` field — each local maximum seeds a room, and every floor cell is claimed by the nearest seed via multi-source BFS. No explicit corridor entries; `firstCorridorRegionId = numRooms + 1`. Start/end chosen by the same BFS approach.
+
+**Spawn override**: `DungeonOptions.onChooseSpawn(ctx)` receives `{ rooms, startRoom, endRoom }` and returns a `roomId`; the engine centers the player in that room. Default behaviour (no callback) uses `startRoomId`.
 
 **Files:**
-- `dungeon/bsp.ts` — BSP tree split, room placement, corridor carving, `setupDungeon()`, `DungeonOutputs` shape; produces `floorHeightOffset`, `ceilingHeightOffset`, `colliderFlags`, `floorSkirtType`, and `ceilSkirtType` textures; `setFloorSkirtTiles()` / `setCeilSkirtTiles()` per-cell skirt tile helpers
-- `dungeon/cellular.ts` — cellular automata generator producing the same `DungeonOutputs` shape including `colliderFlags`, `floorSkirtType`, and `ceilSkirtType`
+- `dungeon/bsp.ts` — BSP tree split, room placement, corridor carving; `DungeonOutputs` and `RoomedDungeonOutputs` base types; `BspDungeonOutputs = RoomedDungeonOutputs`; `RoomInfo` type; produces `floorHeightOffset`, `ceilingHeightOffset`, `colliderFlags`, `floorSkirtType`, and `ceilSkirtType` textures; `setFloorSkirtTiles()` / `setCeilSkirtTiles()` per-cell skirt tile helpers
+- `dungeon/cellular.ts` — cellular automata generator; `buildVoronoiRooms()` detects rooms via distanceToWall local maxima and assigns region IDs via multi-source BFS; `CellularDungeonOutputs` extends `RoomedDungeonOutputs`; exports `generateCellularDungeon`, `CellularOptions`, `CellularDungeonOutputs`
 - `dungeon/colliderFlags.ts` — `IS_WALKABLE`, `IS_BLOCKED`, `IS_LIGHT_PASSABLE` constants; `buildColliderFlags()` deriver; `isWalkableCell()`, `isBlockedCell()`, `isLightPassableCell()` predicates
-- `dungeon/serialize.ts` — `SerializedDungeon` type (version, width, height, seed, startRoomId, endRoomId, firstCorridorRegionId, plus Base64 channels for solid/regionId/distanceToWall/hazards/colliderFlags/floorSkirtType?/ceilSkirtType?/floorHeightOffset?/ceilingHeightOffset?, and optional `paintMap` Record for surface-painter overlays); `serializeDungeon(dungeon, paintMap?)` snapshots all mutable texture data including optional height offsets and paint map; `deserializeDungeon()` reconstructs a `BspDungeonOutputs` restoring height textures when present; `rehydrateDungeon()` does full restoration including room graph by re-running BSP deterministically with the stored seed, then overlays height textures; `dungeonToJson()` / `dungeonFromJson()` JSON string convenience wrappers
+- `dungeon/serialize.ts` — `SerializedDungeon` type; `serializeDungeon(dungeon: RoomedDungeonOutputs, paintMap?)` accepts both BSP and cellular outputs; `deserializeDungeon()` reconstructs a `BspDungeonOutputs`; `rehydrateDungeon()` full restoration; `dungeonToJson()` / `dungeonFromJson()` JSON string convenience wrappers
 - `dungeon/themes.ts` — `ThemeDef` type with optional `floorSkirtType?` / `ceilSkirtType?` tile name fields; `ThemeSelector` union (string | string[] | weighted array | callback); built-in themes (dungeon, crypt, catacomb, industrial, ruins); public exports `THEMES`, `THEME_KEYS`, `resolveTheme()`, `registerTheme()`, `getTheme()`
 - `utils/geometry.ts` — `MinHeap<T>`, `octile()` used internally by BSP helpers
 
@@ -259,7 +266,7 @@ Bitwise flags stored in `DungeonOutputs.textures.colliderFlags` (R8 DataTexture)
 
 **Files:**
 - `entities/factory.ts` — `createEntity()` single factory; no built-in monster templates or stat defaults
-- `api/createGame.ts` — `AtomicCore.attachSpawner(game, { onSpawn })`; game loop calls `onSpawn({ dungeon, roomId, x, y })` and adds returned entities via `turns.addActor()`
+- `api/createGame.ts` — `AtomicCore.attachSpawner(game, { onSpawn })`; game loop calls `onSpawn({ dungeon, roomId, x, y })` and adds returned entities via `turns.addActor()`; `DungeonOptions.onChooseSpawn(ctx)` callback receives `{ rooms, startRoom, endRoom }` and returns a `roomId` to override the default spawn position (works for both BSP and cellular); `SpawnChooserContext` type exported
 
 ---
 
@@ -442,4 +449,4 @@ Self-contained save/load layer that wraps a `SerializedDungeon` with all setting
 - `api/player.ts` — player handle and action methods
 - `api/actions.ts` — action pipeline middleware
 - `api/keybindings.ts` — DOM keybinding attachment
-- `index.ts` — re-exports the public `AtomicCore` namespace: `createGame`, `attachMinimap`, `attachSpawner`, `attachDecorator`, `attachSurfacePainter`, `attachKeybindings`, `createEntity`, `createItem`, `createFactionRegistry`, `createFactionRegistryFromTable`, `createWebSocketTransport`, `packedAtlasResolver`, `loadSkybox`; types: `EntityCoreOpts`, `CombatResolver`, `CombatResolverContext`, `CombatResult`, `FactionRegistry`, `FactionStance`, `FactionId`, `SkyboxFaces`, `SkyboxOptions`
+- `index.ts` — re-exports the public `AtomicCore` namespace: `createGame`, `attachMinimap`, `attachSpawner`, `attachDecorator`, `attachSurfacePainter`, `attachKeybindings`, `createEntity`, `createItem`, `createFactionRegistry`, `createFactionRegistryFromTable`, `createWebSocketTransport`, `packedAtlasResolver`, `loadSkybox`, `generateCellularDungeon`; types: `EntityCoreOpts`, `CombatResolver`, `CombatResolverContext`, `CombatResult`, `FactionRegistry`, `FactionStance`, `FactionId`, `SkyboxFaces`, `SkyboxOptions`, `RoomedDungeonOutputs`, `CellularOptions`, `CellularDungeonOutputs`, `SpawnChooserContext`
