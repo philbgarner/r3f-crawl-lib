@@ -190,7 +190,7 @@ Available standalone examples:
   </script>
   <script src="/dist/atomic-core.iife.js" defer></script>
   <script defer>
-    const { createGame, createEnemy, attachSpawner, attachKeybindings, createDungeonRenderer } = AtomicCore
+    const { createGame, createEntity, attachSpawner, attachKeybindings, createDungeonRenderer } = AtomicCore
 
     const game = createGame(document.body, {
       dungeon: {
@@ -203,10 +203,10 @@ Available standalone examples:
       player: { hp: 30, maxHp: 30, attack: 5, defense: 2, speed: 5 },
       combat: {
         onDamage({ attacker, defender, amount }) {
-          console.log(`${attacker.type} hits ${defender.type} for ${amount}`)
+          console.log(`${attacker.spriteName} hits ${defender.spriteName} for ${amount}`)
         },
         onDeath({ entity }) {
-          console.log(`${entity.type} is slain!`)
+          console.log(`${entity.spriteName} is slain!`)
         },
       },
     })
@@ -342,18 +342,17 @@ game.events.on('audio', function({ name }) {
 
 ```js
 // NPCs are neutral towards the player; hostile only to enemies
-var villager = AtomicCore.createNpc({
-  type: 'villager',
-  sprite: 'v',
+var villager = AtomicCore.createEntity({
+  kind: 'npc', faction: 'npc',
+  spriteName: 'villager',
   x: 5, z: 3,
   hp: 20, attack: 2, defense: 1,
-  faction: 'npc',
 })
 
 // Enemies are hostile to both the player and NPCs
-var goblin = AtomicCore.createEnemy({
-  type:    'goblin',
-  sprite:  'g',
+var goblin = AtomicCore.createEntity({
+  kind: 'enemy', faction: 'enemy',
+  spriteName: 'goblin',
   x: 10, z: 10,
   hp: 15, maxHp: 15,
   attack: 4, defense: 1,
@@ -557,9 +556,9 @@ AtomicCore.attachSpawner(game, {
     if (roomId < 2) return null                 // skip early rooms
     if (Math.random() > 0.55) return null       // random density
 
-    var e = AtomicCore.createEnemy({
-      type:    'goblin',
-      sprite:  'g',
+    var e = AtomicCore.createEntity({
+      kind: 'enemy', faction: 'enemy',
+      spriteName: 'goblin',
       x:       x,
       z:       y,
       hp:      8,
@@ -598,12 +597,13 @@ AtomicCore.attachDecorator(game, {
     if (!room) return null
 
     if (Math.random() < 0.05) {
-      return AtomicCore.createDecoration({
-        type:       'barrel',
+      return AtomicCore.createEntity({
+        kind: 'decoration', faction: 'none',
+        spriteName: 'barrel',
         x:          x,
         z:          y,
-        sprite:     'barrel',
         blocksMove: true,
+        alive:      false,
       })
     }
 
@@ -707,9 +707,7 @@ See [Inventory Dialog](#inventory-dialog-1) in Core Concepts for the full option
 | `AtomicCore.attachDecorator(game, opts)` | Register a decoration callback to place stationary props |
 | `AtomicCore.attachSurfacePainter(game, opts)` | Register a callback to paint atlas layers on surfaces |
 | `AtomicCore.attachKeybindings(game, opts)` | Register keyboard bindings |
-| `AtomicCore.createNpc(opts)` | Create an NPC entity |
-| `AtomicCore.createEnemy(opts)` | Create an enemy entity |
-| `AtomicCore.createDecoration(opts)` | Create a stationary decoration |
+| `AtomicCore.createEntity(opts)` | Create any entity (player, npc, enemy, decoration) |
 | `AtomicCore.createItem(opts)` | Create an item |
 | `AtomicCore.showInventory(opts)` | Open an RPG inventory dialog; returns a live handle |
 | `AtomicCore.buildTilesetMap(tiledJson, options)` | Build a GID→atlas-name map from a Tiled tileset JSON |
@@ -1021,91 +1019,74 @@ var game = AtomicCore.createGame(element, {
 
 ### Entities
 
-All entities share a common base interface.
+All entities share a common base interface. Engine fields are explicitly typed; game-specific attributes (hp, maxHp, attack, defense, xp, etc.) are stored on the entity via an index signature and can be any type.
 
 ```js
-// Entity base interface
+// Entity base interface — engine fields
 {
   id:         string,     // auto-generated unique identifier
   kind:       string,     // 'player' | 'npc' | 'enemy' | 'decoration'
-  type:       string,     // entity subtype label
-  sprite:     string,     // sprite key (single character glyph or atlas name)
+  faction:    string,     // 'player' | 'npc' | 'enemy' | 'none'
+  spriteName: string,     // sprite atlas name resolved by the tile-atlas resolver
   x:          number,
   z:          number,
-  hp:         number,
-  maxHp:      number,
-  attack:     number,
-  defense:    number,
   speed:      number,
   alive:      boolean,
   blocksMove: boolean,
-  faction:    string,     // 'player' | 'npc' | 'enemy'
+  tick:       number,     // turn-scheduler counter
+  spriteMap?: SpriteMap,  // present → renders as billboard sprite instead of box
+  // ...any game-specific field (hp, maxHp, attack, xp, …) via index signature
 }
 ```
 
-#### NPCs
+Use `createEntity` to create any entity kind. Pass the required engine fields plus any game-specific attributes as extra keys — they are spread onto the entity verbatim.
 
-NPCs are friendly to the player but will fight back against enemies.
-
-```js
-var villager = AtomicCore.createNpc({
-  type:    'villager',
-  sprite:  'v',
-  x: 5, z: 3,
-  hp: 20, attack: 2, defense: 1,
-  faction: 'npc',
-})
-```
-
-`createNpc` options:
+`createEntity` engine options:
 
 | Field | Type | Default |
 |---|---|---|
-| `type` | string | required |
-| `sprite` | string \| number | required |
+| `kind` | `'player'\|'npc'\|'enemy'\|'decoration'` | required |
+| `faction` | string | required |
+| `spriteName` | string | required |
 | `x`, `z` | number | required |
-| `hp` | number | `10` |
-| `maxHp` | number | `hp` |
-| `attack` | number | `0` |
-| `defense` | number | `0` |
-| `speed` | number | `5` |
-| `blocksMove` | boolean | `true` |
-| `faction` | string | `'none'` |
+| `alive` | boolean | `true` |
+| `blocksMove` | boolean | `false` |
+| `speed` | number | `1` |
+| `spriteMap` | SpriteMap | — |
 
-#### Enemies
-
-Enemies are hostile to both the player and NPCs.
+Any additional key/value pairs (hp, maxHp, attack, defense, xp, danger, yaw, scale, …) are passed through and stored on the entity.
 
 ```js
-var goblin = AtomicCore.createEnemy({
-  type:    'goblin',
-  sprite:  'g',
+// NPC — neutral; will fight back against enemies
+var villager = AtomicCore.createEntity({
+  kind: 'npc', faction: 'npc',
+  spriteName: 'villager',
+  x: 5, z: 3,
+  hp: 20, maxHp: 20, attack: 2, defense: 1,
+  blocksMove: true,
+})
+
+// Enemy — hostile to the player and NPCs
+var goblin = AtomicCore.createEntity({
+  kind: 'enemy', faction: 'enemy',
+  spriteName: 'goblin',
   x: 10, z: 10,
   hp: 15, maxHp: 15,
   attack: 4, defense: 1,
-  speed:  6,
-  danger: 1,   // 0-10 scale; affects detection radius and persistence
-  xp:     20,
+  speed: 6,
+  danger: 1,
+  xp: 20,
 })
 ```
-
-`createEnemy` options (extends NPC opts):
-
-| Field | Type | Default |
-|---|---|---|
-| `danger` | number | `1` |
-| `xp` | number | `10` |
-| `rpsEffect` | string | `'none'` |
-
-The returned `EnemyEntity` also has `alertState: 'idle' | 'chasing' | 'searching'` and `searchTurnsLeft`.
 
 #### Billboard Sprites
 
 Adding a `spriteMap` field to any entity switches the renderer from a coloured box to a camera-facing billboard quad. Layers are drawn back-to-front; each layer samples one tile from the shared atlas. Angle overrides swap tiles when the camera views the entity from a particular direction.
 
 ```js
-var goblin = AtomicCore.createEnemy({
-  type: 'goblin', sprite: 'g',
+var goblin = AtomicCore.createEntity({
+  kind: 'enemy', faction: 'enemy',
+  spriteName: 'goblin',
   x: 5, z: 7,
   hp: 8, maxHp: 8, attack: 2, defense: 0,
   speed: 6, danger: 1, xp: 10,
@@ -1205,9 +1186,9 @@ AtomicCore.attachSpawner(game, {
   onSpawn: function({ dungeon, roomId, x, y }) {
     if (roomId < 2) return null   // skip spawn rooms near the start
 
-    return AtomicCore.createEnemy({
-      type:    'goblin',
-      sprite:  'g',
+    return AtomicCore.createEntity({
+      kind: 'enemy', faction: 'enemy',
+      spriteName: 'goblin',
       x:       x,
       z:       y,
       hp:      8, maxHp: 8,
@@ -1225,29 +1206,33 @@ AtomicCore.attachSpawner(game, {
 Decorations are stationary props - furniture, barrels, wall fixtures, etc. They have no AI or combat stats and are not alive in the turn sense.
 
 ```js
-var barrel = AtomicCore.createDecoration({
-  type:       'barrel',
+var barrel = AtomicCore.createEntity({
+  kind:       'decoration',
+  faction:    'none',
+  spriteName: 'barrel',
   x:          8,
   z:          5,
-  sprite:     'barrel',
   blocksMove: true,    // default: false
+  alive:      false,
+  // game-specific fields passed through verbatim:
   yaw:        0,       // rotation in radians
   scale:      1,       // uniform scale multiplier
 })
 ```
 
-Decoration fields on the returned entity:
+Decoration fields on the returned entity (engine fields + any extras you supplied):
 
 ```js
 {
-  id:         string,     // auto-generated
+  id:         string,       // auto-generated
   kind:       'decoration',
-  type:       string,
+  faction:    'none',
+  spriteName: string,
   x:          number,
   z:          number,
-  sprite:     string,
   blocksMove: boolean,
-  alive:      false,      // decorations are never alive
+  alive:      false,
+  // game-specific (via index signature):
   yaw:        number,
   scale:      number,
 }
@@ -1262,8 +1247,10 @@ AtomicCore.attachDecorator(game, {
     if (!room) return null
 
     if (Math.random() < 0.05) {
-      return AtomicCore.createDecoration({
-        type: 'barrel', x: x, z: y, sprite: 'barrel', blocksMove: true,
+      return AtomicCore.createEntity({
+        kind: 'decoration', faction: 'none',
+        spriteName: 'barrel',
+        x: x, z: y, blocksMove: true, alive: false,
       })
     }
 
@@ -1275,10 +1262,14 @@ AtomicCore.attachDecorator(game, {
 Decorations can also be placed imperatively at any time:
 
 ```js
-var pillar = AtomicCore.createDecoration({ type: 'pillar', x: 4, z: 6, sprite: 'stone-pillar', blocksMove: true })
+var pillar = AtomicCore.createEntity({
+  kind: 'decoration', faction: 'none',
+  spriteName: 'stone-pillar',
+  x: 4, z: 6, blocksMove: true, alive: false,
+})
 game.dungeon.decorations.add(pillar)
 game.dungeon.decorations.remove(pillar.id)
-game.dungeon.decorations.list   // DecorationEntity[]
+game.dungeon.decorations.list   // EntityBase[]
 ```
 
 ---
