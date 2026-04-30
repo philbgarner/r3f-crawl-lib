@@ -2,44 +2,8 @@
 
 # Type Alias: BspDungeonOutputs
 
-> **BspDungeonOutputs** = [`DungeonOutputs`](DungeonOutputs.md) & `object`
+> **BspDungeonOutputs** = [`RoomedDungeonOutputs`](RoomedDungeonOutputs.md)
 
-Defined in: [dungeon/bsp.ts:135](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/dungeon/bsp.ts#L135)
+Defined in: [dungeon/bsp.ts:166](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/dungeon/bsp.ts#L166)
 
-## Type Declaration
-
-### endRoomId
-
-> **endRoomId**: `number`
-
-Room ID (matches regionId texture values) chosen as the dungeon exit. Has exactly 1 corridor connection.
-
-### firstCorridorRegionId
-
-> **firstCorridorRegionId**: `number`
-
-Lowest regionId assigned to a corridor segment.
-
-### fullRegionIds
-
-> **fullRegionIds**: `Uint8Array`
-
-Region-id array with unique IDs for every cell: room cells keep their
-original IDs (1..maxRoomId), corridor cells have IDs starting at
-`firstCorridorRegionId`, wall cells are 0.
-Identical in content to `textures.regionId`.
-
-### rooms
-
-> **rooms**: `Map`\<`number`, `RoomInfo`\>
-
-Map from regionId → RoomInfo for every carved room AND every corridor segment.
-Room entries have `type: "room"` and IDs matching textures.regionId values (1+).
-Corridor entries have `type: "corridor"` and IDs starting at `firstCorridorRegionId`.
-startRoomId and endRoomId are guaranteed keys.
-
-### startRoomId
-
-> **startRoomId**: `number`
-
-Room ID furthest from endRoomId - used as the player spawn room.
+BSP-generated dungeon outputs. Identical shape to RoomedDungeonOutputs.

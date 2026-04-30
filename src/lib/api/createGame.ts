@@ -1343,7 +1343,7 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
               entity = {
                 id: mn.id,
                 kind: 'enemy',
-                spriteName: (mn.sprite as string | undefined) ?? mn.type,
+                spriteName: mn.spriteName ?? (mn.sprite as string | undefined) ?? mn.type ?? mn.id,
                 faction: mn.faction,
                 x: mn.x,
                 z: mn.z,
@@ -1351,13 +1351,13 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
                 alive: mn.alive,
                 blocksMove: mn.blocksMove,
                 tick: mn.tick,
-                // game-specific fields via index sig
-                type: mn.type,
-                sprite: mn.sprite,
                 hp: mn.hp,
                 maxHp: mn.maxHp,
                 attack: mn.attack,
                 defense: mn.defense,
+                // backward-compat shims — present only when received from an older host
+                ...(mn.type !== undefined ? { type: mn.type } : {}),
+                ...(mn.sprite !== undefined ? { sprite: mn.sprite } : {}),
               };
               if (mn.spriteMap) (entity as Record<string, unknown>).spriteMap = mn.spriteMap;
               internal.entityById.set(mn.id, entity);
@@ -1401,7 +1401,7 @@ export function createGame(canvas: HTMLElement, options: GameOptions): GameHandl
             actors[mn.id] = { ...existing, x: mn.x, y: mn.z, hp: mn.hp, alive: mn.alive };
           } else {
             actors[mn.id] = {
-              id: mn.id, kind: 'monster', name: mn.type, glyph: mn.type[0] ?? '?',
+              id: mn.id, kind: 'monster', name: mn.type ?? mn.spriteName, glyph: (mn.type ?? mn.spriteName)[0] ?? '?',
               x: mn.x, y: mn.z, speed: mn.speed, alive: mn.alive,
               blocksMovement: mn.blocksMove,
               hp: mn.hp, maxHp: mn.maxHp, attack: mn.attack, defense: mn.defense,

@@ -4,7 +4,7 @@
 
 > **PlaceAPI** = `object`
 
-Defined in: [api/createGame.ts:162](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/api/createGame.ts#L162)
+Defined in: [api/createGame.ts:154](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/api/createGame.ts#L154)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [api/createGame.ts:162](https://github.com/philbgarner/atomic-core/b
 
 > **billboard**(`x`, `z`, `type`, `spriteMap`, `opts?`): `void`
 
-Defined in: [api/createGame.ts:169](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/api/createGame.ts#L169)
+Defined in: [api/createGame.ts:161](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/api/createGame.ts#L161)
 
 Place a stationary camera-facing billboard sprite at a grid cell.
 The placement is stored in `game.dungeon.objects` and rendered when passed
@@ -26,7 +26,7 @@ to `renderer.setObjects(game.dungeon.objects)`.
 | `z` | `number` |
 | `type` | `string` |
 | `spriteMap` | [`SpriteMap`](../interfaces/SpriteMap.md) |
-| `opts?` | `Pick`\<[`ObjectPlacement`](../interfaces/ObjectPlacement.md), `"meta"` \| `"yaw"` \| `"scale"` \| `"offsetX"` \| `"offsetZ"` \| `"offsetY"`\> |
+| `opts?` | `Pick`\<[`ObjectPlacement`](../interfaces/ObjectPlacement.md), `"meta"` \| `"offsetX"` \| `"offsetZ"` \| `"offsetY"` \| `"yaw"` \| `"scale"`\> |
 
 #### Returns
 
@@ -38,7 +38,7 @@ to `renderer.setObjects(game.dungeon.objects)`.
 
 > **decoration**(`x`, `z`, `type`, `opts?`): `void`
 
-Defined in: [api/createGame.ts:178](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/api/createGame.ts#L178)
+Defined in: [api/createGame.ts:170](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/api/createGame.ts#L170)
 
 #### Parameters
 
@@ -59,7 +59,7 @@ Defined in: [api/createGame.ts:178](https://github.com/philbgarner/atomic-core/b
 
 > **enemy**(`x`, `z`, `type`, `opts?`): `void`
 
-Defined in: [api/createGame.ts:177](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/api/createGame.ts#L177)
+Defined in: [api/createGame.ts:169](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/api/createGame.ts#L169)
 
 #### Parameters
 
@@ -80,7 +80,7 @@ Defined in: [api/createGame.ts:177](https://github.com/philbgarner/atomic-core/b
 
 > **npc**(`x`, `z`, `type`, `opts?`): `void`
 
-Defined in: [api/createGame.ts:176](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/api/createGame.ts#L176)
+Defined in: [api/createGame.ts:168](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/api/createGame.ts#L168)
 
 #### Parameters
 
@@ -101,7 +101,7 @@ Defined in: [api/createGame.ts:176](https://github.com/philbgarner/atomic-core/b
 
 > **object**(`x`, `z`, `type`, `meta?`): `void`
 
-Defined in: [api/createGame.ts:163](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/api/createGame.ts#L163)
+Defined in: [api/createGame.ts:155](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/api/createGame.ts#L155)
 
 #### Parameters
 
@@ -122,7 +122,7 @@ Defined in: [api/createGame.ts:163](https://github.com/philbgarner/atomic-core/b
 
 > **surface**(`x`, `z`, `layers`): `void`
 
-Defined in: [api/createGame.ts:179](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/api/createGame.ts#L179)
+Defined in: [api/createGame.ts:171](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/api/createGame.ts#L171)
 
 #### Parameters
 

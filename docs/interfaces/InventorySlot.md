@@ -2,7 +2,7 @@
 
 # Interface: InventorySlot
 
-Defined in: [entities/inventory.ts:34](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/entities/inventory.ts#L34)
+Defined in: [entities/inventory.ts:34](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/entities/inventory.ts#L34)
 
 A single slot in a character's inventory grid.
 
@@ -10,6 +10,6 @@ A single slot in a character's inventory grid.
 
 | Property | Type | Description | Defined in |
 | ------ | ------ | ------ | ------ |
-| <a id="index"></a> `index` | `number` | Slot position index (0-based). | [entities/inventory.ts:36](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/entities/inventory.ts#L36) |
-| <a id="item"></a> `item` | [`Item`](Item.md) \| `null` | The item occupying this slot, or `null` if empty. | [entities/inventory.ts:38](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/entities/inventory.ts#L38) |
-| <a id="quantity"></a> `quantity` | `number` | Stack count. 1 for non-stackable items. | [entities/inventory.ts:40](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/entities/inventory.ts#L40) |
+| <a id="index"></a> `index` | `number` | Slot position index (0-based). | [entities/inventory.ts:36](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/entities/inventory.ts#L36) |
+| <a id="item"></a> `item` | [`Item`](Item.md) \| `null` | The item occupying this slot, or `null` if empty. | [entities/inventory.ts:38](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/entities/inventory.ts#L38) |
+| <a id="quantity"></a> `quantity` | `number` | Stack count. 1 for non-stackable items. | [entities/inventory.ts:40](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/entities/inventory.ts#L40) |

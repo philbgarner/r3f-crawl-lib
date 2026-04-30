@@ -4,7 +4,7 @@
 
 > **ActionTransport** = `object`
 
-Defined in: [transport/types.ts:86](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L86)
+Defined in: [transport/types.ts:90](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L90)
 
 Dependency-injection interface for the optional multiplayer transport layer.
 
@@ -17,7 +17,7 @@ Use `createWebSocketTransport(url)` for a ready-made WebSocket implementation.
 
 | Property | Modifier | Type | Description | Defined in |
 | ------ | ------ | ------ | ------ | ------ |
-| <a id="playerid"></a> `playerId` | `readonly` | `string` \| `null` | Server-assigned player ID. Null before connect() resolves. | [transport/types.ts:123](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L123) |
+| <a id="playerid"></a> `playerId` | `readonly` | `string` \| `null` | Server-assigned player ID. Null before connect() resolves. | [transport/types.ts:127](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L127) |
 
 ## Methods
 
@@ -25,7 +25,7 @@ Use `createWebSocketTransport(url)` for a ready-made WebSocket implementation.
 
 > **connect**(`meta?`): `Promise`\<\{ `dungeonConfig?`: `Record`\<`string`, `unknown`\>; `isHost`: `boolean`; `playerId`: `string`; \}\>
 
-Defined in: [transport/types.ts:92](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L92)
+Defined in: [transport/types.ts:96](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L96)
 
 Connect to the server. Resolves with the server-assigned player ID and
 whether this client is the room host (first to join). Non-host clients
@@ -47,7 +47,7 @@ also receive the dungeon config so they can generate the same dungeon.
 
 > **disconnect**(): `void`
 
-Defined in: [transport/types.ts:120](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L120)
+Defined in: [transport/types.ts:124](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L124)
 
 #### Returns
 
@@ -59,7 +59,7 @@ Defined in: [transport/types.ts:120](https://github.com/philbgarner/atomic-core/
 
 > **initDungeon**(`payload`): `void`
 
-Defined in: [transport/types.ts:118](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L118)
+Defined in: [transport/types.ts:122](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L122)
 
 Send the dungeon solid map and config to the server. Called by the host
 client after game.generate() completes so the server can validate moves
@@ -81,7 +81,7 @@ and share the config with late-joining clients.
 
 > **onChat**(`handler`): `void`
 
-Defined in: [transport/types.ts:147](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L147)
+Defined in: [transport/types.ts:151](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L151)
 
 Register a handler that fires whenever a chat message is received.
 
@@ -101,7 +101,7 @@ Register a handler that fires whenever a chat message is received.
 
 > `optional` **onMissionComplete**(`handler`): `void`
 
-Defined in: [transport/types.ts:169](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L169)
+Defined in: [transport/types.ts:173](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L173)
 
 Register a handler that fires when the server relays a mission completion
 from another connected player. `createGame()` wires this internally to
@@ -125,7 +125,7 @@ Optional — if absent, peer mission events are never emitted.
 
 > **onStateUpdate**(`handler`): `void`
 
-Defined in: [transport/types.ts:111](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L111)
+Defined in: [transport/types.ts:115](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L115)
 
 Register a handler that fires whenever the server pushes a state update.
 Multiple handlers are supported — each call appends a new subscriber.
@@ -148,7 +148,7 @@ register another to track other players for rendering.
 
 > **send**(`action`): `void`
 
-Defined in: [transport/types.ts:103](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L103)
+Defined in: [transport/types.ts:107](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L107)
 
 Send a player action to the authoritative server instead of applying it
 locally. Called automatically by game.turns.commit() when a transport is
@@ -170,7 +170,7 @@ configured.
 
 > **sendChat**(`text`): `void`
 
-Defined in: [transport/types.ts:128](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L128)
+Defined in: [transport/types.ts:132](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L132)
 
 Send a chat message to all players in the room.
 
@@ -190,7 +190,7 @@ Send a chat message to all players in the room.
 
 > **sendMeta**(`meta`): `void`
 
-Defined in: [transport/types.ts:135](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L135)
+Defined in: [transport/types.ts:139](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L139)
 
 Send arbitrary metadata to the server to be broadcast to all peers via
 the state snapshot. Useful for things like sprite choice that other
@@ -212,7 +212,7 @@ clients need to know but that the server doesn't act on.
 
 > `optional` **sendMissionComplete**(`missionId`, `name`): `void`
 
-Defined in: [transport/types.ts:160](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L160)
+Defined in: [transport/types.ts:164](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L164)
 
 Notify the server that this player completed a mission. The server is
 expected to broadcast this to all other connected clients so they can
@@ -237,7 +237,7 @@ Optional — if absent, mission completions are not broadcast to peers.
 
 > **sendMonsterState**(`monsters`): `void`
 
-Defined in: [transport/types.ts:142](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/transport/types.ts#L142)
+Defined in: [transport/types.ts:146](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/transport/types.ts#L146)
 
 Send the current monster state to the server so it can be broadcast to
 all connected clients. Should be called by the host after generate() and

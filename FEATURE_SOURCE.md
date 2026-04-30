@@ -370,7 +370,7 @@ Evaluator-driven mission system that hooks into the turn loop. The developer reg
 Dependency-injection layer that makes the server authoritative for all player actions and monster AI. When `GameOptions.transport` is set, `game.turns.commit()` forwards actions to the server instead of applying them locally; the server validates each action, runs monster AI (chase + 4-directional movement + melee combat), updates canonical state, and broadcasts a `ServerStateUpdate` to all connected clients. `createGame` registers a reconciliation handler that patches local turn state, auto-registers monster entities in `entityById` for non-host clients, and re-emits the `"turn"` event. Initial state messages buffered during `connect()` are replayed when the first `onStateUpdate` handler registers so late-joining clients see current monster positions immediately. Single-player code paths are completely unaffected.
 
 **Files:**
-- `transport/types.ts` — `ActionTransport` interface, `ServerStateUpdate`, `PlayerNetState`, `DungeonInitPayload`
+- `transport/types.ts` — `ActionTransport` interface, `ServerStateUpdate`, `PlayerNetState`, `DungeonInitPayload`, `MonsterNetState` (uses `spriteName`; deprecated `type`/`sprite` kept optional for backward compatibility with older save files)
 - `transport/websocket.ts` — `createWebSocketTransport(url)` browser-side factory; buffers `state` messages before `onStateUpdate` is registered and replays them on first handler registration
 - `api/createGame.ts` — `GameOptions.transport`, `PlayerOptions.id`, commit intercept, reconciliation wiring; auto-registers and syncs monster entities from state updates
 

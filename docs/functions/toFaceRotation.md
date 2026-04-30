@@ -4,7 +4,7 @@
 
 > **toFaceRotation**(`rotation`): `FaceRotation`
 
-Defined in: [rendering/textureLoader.ts:89](https://github.com/philbgarner/atomic-core/blob/498d6b46e9389c84d1eb5047eb7861b469b0e47a/src/lib/rendering/textureLoader.ts#L89)
+Defined in: [rendering/textureLoader.ts:89](https://github.com/philbgarner/atomic-core/blob/4041e6411d0bb6dd169f8ed8eae77a3af59aedf0/src/lib/rendering/textureLoader.ts#L89)
 
 Convert a PackedSprite rotation (degrees CW) to a FaceRotation index
 compatible with the FaceTileSpec / billboard shader pathway.

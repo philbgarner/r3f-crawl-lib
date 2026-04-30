@@ -1910,6 +1910,7 @@ A minimal Three.js shim (`src/server/three-shim.js`) lets `bsp.ts` run in Node w
 | `ActionTransport` | Interface for custom transport implementations |
 | `ServerStateUpdate` | Payload broadcast to all room peers after each validated action |
 | `PlayerNetState` | Per-player position and stats included in each update |
+| `MonsterNetState` | Per-enemy position and stats included in each update; uses `spriteName` (deprecated `type`/`sprite` fields accepted for backward compatibility) |
 | `DungeonInitPayload` | Sent by the server to new connections to bootstrap dungeon state |
 
 ---
