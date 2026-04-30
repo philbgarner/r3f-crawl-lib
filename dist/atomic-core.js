@@ -3030,7 +3030,7 @@ function createGame(canvas, options) {
 						entity = {
 							id: mn.id,
 							kind: "enemy",
-							spriteName: mn.sprite ?? mn.type,
+							spriteName: mn.spriteName ?? mn.sprite ?? mn.type ?? mn.id,
 							faction: mn.faction,
 							x: mn.x,
 							z: mn.z,
@@ -3038,12 +3038,12 @@ function createGame(canvas, options) {
 							alive: mn.alive,
 							blocksMove: mn.blocksMove,
 							tick: mn.tick,
-							type: mn.type,
-							sprite: mn.sprite,
 							hp: mn.hp,
 							maxHp: mn.maxHp,
 							attack: mn.attack,
-							defense: mn.defense
+							defense: mn.defense,
+							...mn.type !== void 0 ? { type: mn.type } : {},
+							...mn.sprite !== void 0 ? { sprite: mn.sprite } : {}
 						};
 						if (mn.spriteMap) entity.spriteMap = mn.spriteMap;
 						internal.entityById.set(mn.id, entity);
@@ -3101,8 +3101,8 @@ function createGame(canvas, options) {
 					else actors[mn.id] = {
 						id: mn.id,
 						kind: "monster",
-						name: mn.type,
-						glyph: mn.type[0] ?? "?",
+						name: mn.type ?? mn.spriteName,
+						glyph: (mn.type ?? mn.spriteName)[0] ?? "?",
 						x: mn.x,
 						y: mn.z,
 						speed: mn.speed,
@@ -6403,7 +6403,7 @@ function stripNonSerializable(opts) {
 */
 function exportDungeonMap(dungeon, options) {
 	return {
-		version: "0.8.3",
+		version: "0.8.4",
 		exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
 		...options.meta !== void 0 ? { meta: options.meta } : {},
 		generatorOptions: options.generatorOptions,

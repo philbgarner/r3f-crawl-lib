@@ -17,8 +17,8 @@ export type PlayerNetState = {
 export type MonsterNetState = {
     id: string;
     kind: 'enemy';
-    type: string;
-    sprite: string | number;
+    /** Sprite atlas name (matches EntityBase.spriteName). */
+    spriteName: string;
     x: number;
     z: number;
     hp: number;
@@ -31,6 +31,10 @@ export type MonsterNetState = {
     faction: string;
     tick: number;
     spriteMap?: unknown;
+    /** @deprecated Use spriteName. Kept for backward compatibility with older save files. */
+    type?: string;
+    /** @deprecated Use spriteName. Kept for backward compatibility with older save files. */
+    sprite?: string | number;
 };
 /** Broadcast by the server after every accepted action. */
 export type ServerStateUpdate = {
